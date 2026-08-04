@@ -4,24 +4,14 @@ cp ./scripts/data.py download_chess_game/
 cp ./scripts/board.py download_chess_game/
 cd download_chess_game/
 
-for year in 2024 2023; do
-    for month in 01 02 09 10 11 12; do
-        if [ "$year" = "2024" ] || ([ "$year" = "2023" ] && [ "$month" -ge 9 ]); then
-            mkdir -p "database${year}/${year}${month}/"
-            python3 data.py $year $month -u > "database${year}/${year}${month}/${year}-${month}-convert.txt"
-        fi
-    done
-done
+year=2024
+month=01
+mkdir -p "database${year}/${year}${month}/"
+python3 data.py $year $month -u > "database${year}/${year}${month}/${year}-${month}-convert.txt"
 cd ../
 
 mkdir -p training_sgf
-for year in 2024 2023; do
-    for month in 01 02 09 10 11 12; do
-        if [ "$year" = "2024" ] || ([ "$year" = "2023" ] && [ "$month" -ge 9 ]); then
-            mv "download_chess_game/database${year}/${year}${month}/${year}-${month}-convert.txt" training_sgf/
-        fi
-    done
-done
+mv "download_chess_game/database${year}/${year}${month}/${year}-${month}-convert.txt" training_sgf/
 
 
 cp ./scripts/sgf_filter_random_sample.py ./

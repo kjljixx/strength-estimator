@@ -12,3 +12,11 @@ go_19x19_*/
 .sgf
 .txt
 .vscode
+
+candidate_sgf_chess/
+query_sgf_chess/
+training_sgf/
+training_sgf_chess/
+rank_50000_1000_2600_200interval/
+chess.tar.gz
+download_chess_game/
