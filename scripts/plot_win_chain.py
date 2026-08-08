@@ -16,18 +16,20 @@ from typing import List, Optional, Tuple
 import matplotlib.pyplot as plt
 
 
-def mean_sem(moments: dict) -> Tuple[Optional[float], Optional[float]]:
+def mean_sd(moments: dict) -> Tuple[Optional[float], Optional[float]]:
+  """Return (mean, sample SD). Sample SD uses n-1 in the denominator."""
   n = int(moments.get("n", 0))
   if n <= 0:
     return None, None
   mean = float(moments["sum"]) / n
   if n < 2:
     return mean, 0.0
-  var = float(moments["sum_sq"]) / n - mean * mean
-  if var < 0:
-    var = 0.0
-  sem = math.sqrt(var / n)
-  return mean, sem
+  # sample variance from online moments: (sum_sq - n*mean^2) / (n-1)
+  ss = float(moments["sum_sq"]) - n * mean * mean
+  if ss < 0:
+    ss = 0.0
+  sd = math.sqrt(ss / (n - 1))
+  return mean, sd
 
 
 def load_plot_data(path: str) -> dict:
@@ -132,7 +134,7 @@ def plot_elo_diff_vs_link(data: dict, out_path: str) -> bool:
   ys = []
   yerr = []
   for k, m in enumerate(moments_list):
-    mean, sem = mean_sem(m)
+    mean, sd = mean_sd(m)
     if mean is None:
       continue
     xs.append(k)
@@ -141,7 +143,7 @@ def plot_elo_diff_vs_link(data: dict, out_path: str) -> bool:
       yerr.append(0.0)
     else:
       ys.append(mean)
-      yerr.append(sem if sem is not None else 0.0)
+      yerr.append(sd if sd is not None else 0.0)
   if not xs:
     print("skip elo_diff_vs_link: empty series", flush=True)
     return False
@@ -151,7 +153,7 @@ def plot_elo_diff_vs_link(data: dict, out_path: str) -> bool:
   plt.xlabel("Link # (0=weakest)")
   plt.ylabel("Mean Elo relative to link 0")
   n0 = int(moments_list[0].get("n", 0)) if moments_list else 0
-  plt.title(f"Elo diff vs link (mean +/- SEM, n={n0})")
+  plt.title(f"Elo diff vs link (mean +/- SD, n={n0})")
   savefig(out_path)
   return True
 
@@ -174,11 +176,11 @@ def _plot_hist_with_mean(
   centers = [0.5 * (edges[i] + edges[i + 1]) for i in range(n_bins)]
   plt.figure(figsize=(7.5, 4.5))
   plt.bar(centers, counts, width=width * 0.92, color=color, align="center")
-  mean, sem = mean_sem(hist.get("moments") or {})
+  mean, sd = mean_sd(hist.get("moments") or {})
   if mean is not None:
     plt.axvline(mean, color="#e45756", linewidth=1.5, label=f"mean={mean:.1f}")
-    if sem is not None and sem > 0:
-      plt.axvspan(mean - sem, mean + sem, color="#e45756", alpha=0.2, label=f"+/-SEM={sem:.2f}")
+    if sd is not None and sd > 0:
+      plt.axvspan(mean - sd, mean + sd, color="#e45756", alpha=0.2, label=f"+/-SD={sd:.2f}")
     plt.legend(loc="best")
   under = hist.get("underflow", 0)
   over = hist.get("overflow", 0)
@@ -229,13 +231,13 @@ def print_summary(data: dict) -> None:
   s = data.get("sampling") or {}
   edge_m = (data.get("chain_edge_elo_diffs") or {}).get("moments") or {}
   abs_m = (data.get("abs_elo_diff_all") or {}).get("moments") or {}
-  edge_mean, edge_sem = mean_sem(edge_m)
-  abs_mean, abs_sem = mean_sem(abs_m)
+  edge_mean, edge_sd = mean_sd(edge_m)
+  abs_mean, abs_sd = mean_sd(abs_m)
   chains = s.get("chains", 0)
   attempts = s.get("attempts", 0)
   rate = (chains / attempts) if attempts else 0.0
-  edge_s = "n/a" if edge_mean is None else f"{edge_mean:.2f}+/-{edge_sem:.2f}"
-  abs_s = "n/a" if abs_mean is None else f"{abs_mean:.2f}+/-{abs_sem:.2f}"
+  edge_s = "n/a" if edge_mean is None else f"{edge_mean:.2f}+/-{edge_sd:.2f} SD"
+  abs_s = "n/a" if abs_mean is None else f"{abs_mean:.2f}+/-{abs_sd:.2f} SD"
   print(
     f"summary phase={meta.get('phase')} chains={chains}/{s.get('max_chains')} "
     f"attempts={attempts} success={rate:.4f} "
