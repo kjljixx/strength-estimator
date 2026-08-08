@@ -59,5 +59,5 @@ if [ "$record_history" = true ]; then
 fi
 
 container_argumenets=$(echo ${container_argumenets} | xargs)
-echo "$container_tool run --gpus all ${container_argumenets} --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --network=host --ipc=host --rm -it ${container_volume} ${image_name}"
-$container_tool run --gpus all ${container_argumenets} --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --network=host --ipc=host --rm -it ${container_volume} ${image_name}
+echo "docker run --privileged -v /usr/lib/x86_64-linux-gnu/nvidia/current:/usr/lib/x86_64-linux-gnu/nvidia/current:ro -v /usr/lib/x86_64-linux-gnu/libcuda.so.1:/usr/lib/x86_64-linux-gnu/libcuda.so.1:ro -v /usr/lib/x86_64-linux-gnu/libcuda.so:/usr/lib/x86_64-linux-gnu/libcuda.so:ro -e LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/nvidia/current -e NVIDIA_VISIBLE_DEVICES=all --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --network=host --ipc=host --rm -it -v .:/workspace kds285/minizero:latest"
+docker run --privileged -v /usr/lib/x86_64-linux-gnu/nvidia/current:/usr/lib/x86_64-linux-gnu/nvidia/current:ro -v /usr/lib/x86_64-linux-gnu/libcuda.so.1:/usr/lib/x86_64-linux-gnu/libcuda.so.1:ro -v /usr/lib/x86_64-linux-gnu/libcuda.so:/usr/lib/x86_64-linux-gnu/libcuda.so:ro -e LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/nvidia/current -e NVIDIA_VISIBLE_DEVICES=all --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --network=host --ipc=host --rm -it -v .:/workspace kds285/minizero:latest
