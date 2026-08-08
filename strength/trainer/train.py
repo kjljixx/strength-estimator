@@ -37,6 +37,14 @@ class StDadaLoader:
             self.rank = np.zeros(py.get_batch_size() * 1, dtype=np.float32)
 
     def load_data(self):
+        if py.get_bt_use_win_chains():
+            games_path = os.path.join(py.get_training_sgf_dir(), "games.txt")
+            chains_path = os.path.join(py.get_training_sgf_dir(), "chains.txt")
+            eprint(f"loading win-chain games {games_path}")
+            self.data_loader.load_data_from_file(games_path)
+            eprint(f"loading win-chains {chains_path}")
+            self.data_loader.load_win_chains_from_file(chains_path)
+            return
         for entry in os.listdir(py.get_training_sgf_dir()):
             file_name = os.path.join(py.get_training_sgf_dir(), entry)
             if os.path.isfile(file_name):

@@ -14,6 +14,7 @@ extern int bt_num_position_per_rank;
 extern bool bt_use_weight;
 extern bool bt_use_same_game_per_rank;
 extern bool bt_add_non_people;
+extern bool bt_use_win_chains;
 extern std::string training_sgf_dir;
 extern std::string testing_sgf_dir;
 extern std::string candidate_sgf_dir;

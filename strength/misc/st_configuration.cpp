@@ -14,6 +14,7 @@ int bt_num_position_per_rank = 7;
 bool bt_use_weight = false;
 bool bt_use_same_game_per_rank = true;
 bool bt_add_non_people = false;
+bool bt_use_win_chains = false;
 std::string training_sgf_dir = "training_sgf_go";
 std::string testing_sgf_dir = "query_sgf_go";
 std::string candidate_sgf_dir = "candidate_sgf_go";
@@ -42,6 +43,7 @@ void setConfiguration(config::ConfigureLoader& cl)
     cl.addParameter("bt_use_weight", bt_use_weight, "", "Strength");
     cl.addParameter("bt_use_same_game_per_rank", bt_use_same_game_per_rank, "", "Strength");
     cl.addParameter("bt_add_non_people", bt_add_non_people, "when training bt, add the non-people move to be the lowest rank", "Strength");
+    cl.addParameter("bt_use_win_chains", bt_use_win_chains, "sample whole win-chains as BT examples (games.txt + chains.txt)", "Strength");
     cl.addParameter("training_sgf_dir", training_sgf_dir, "", "Strength");
     cl.addParameter("testing_sgf_dir", testing_sgf_dir, "", "Strength");
     cl.addParameter("candidate_sgf_dir", candidate_sgf_dir, "", "Strength");

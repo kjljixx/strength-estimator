@@ -74,12 +74,14 @@ PYBIND11_MODULE(strength_py, m)
     m.def("get_bt_num_rank_per_batch", []() { return strength::bt_num_rank_per_batch; });
     m.def("get_bt_num_position_per_rank", []() { return strength::bt_num_position_per_rank; });
     m.def("get_bt_use_weight", []() { return strength::bt_use_weight; });
+    m.def("get_bt_use_win_chains", []() { return strength::bt_use_win_chains; });
     m.def("get_training_sgf_dir", []() { return strength::training_sgf_dir; });
 
     py::class_<StDataLoader>(m, "StDataLoader")
         .def(py::init<std::string>())
         .def("initialize", &StDataLoader::initialize)
         .def("load_data_from_file", &StDataLoader::loadDataFromFile, py::call_guard<py::gil_scoped_release>())
+        .def("load_win_chains_from_file", &StDataLoader::loadWinChainsFromFile, py::call_guard<py::gil_scoped_release>())
         .def(
             "sample_data", [](StDataLoader& data_loader, py::array_t<float>& features, py::array_t<float>& policy, py::array_t<float>& value) {
                 data_loader.getSharedData()->getDataPtr()->features_ = static_cast<float*>(features.request().ptr);
