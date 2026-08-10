@@ -3,8 +3,8 @@
 # Usage:
 #   ./scripts/preprocess_games.sh           # Elo-bin pipeline (default)
 #   ./scripts/preprocess_games.sh elo
-#   ./scripts/preprocess_games.sh chain     # win-chain ordinal data (requires training_sgf/)
-#   ./scripts/preprocess_games.sh both
+#   ./scripts/preprocess_games.sh chain     # Elo split first, then win-chains from train only
+#   ./scripts/preprocess_games.sh both      # same as chain (Elo split + train-only win-chains)
 
 MODE="${1:-elo}"
 
@@ -51,9 +51,13 @@ run_elo_pipeline() {
 }
 
 run_chain_pipeline() {
-  echo "Building win-chain ordinal data into training_sgf_chess_chain/"
+  if [[ ! -d training_sgf_chess ]] || [[ -z "$(ls -A training_sgf_chess 2>/dev/null)" ]]; then
+    echo "ERROR: training_sgf_chess/ missing or empty; run Elo split first" >&2
+    exit 1
+  fi
+  echo "Building win-chain ordinal data from training_sgf_chess/ into training_sgf_chess_chain/"
   python3 ./scripts/sgf_filter_win_chain.py \
-    --input-dir training_sgf \
+    --input-dir training_sgf_chess \
     --output-dir training_sgf_chess_chain \
     --chain-length 8 \
     --max-chains 50000 \
@@ -66,10 +70,7 @@ case "$MODE" in
   elo)
     run_elo_pipeline
     ;;
-  chain)
-    run_chain_pipeline
-    ;;
-  both)
+  chain|both)
     run_elo_pipeline
     run_chain_pipeline
     ;;
