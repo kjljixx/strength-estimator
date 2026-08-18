@@ -10,6 +10,8 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -28,7 +30,8 @@ bool StDataLoaderThread::addEnvironmentLoader()
     assert(!env_loader.getTag("BR").empty());
     std::lock_guard<std::mutex> lock(getSharedData()->mutex_);
     if (strength::bt_use_win_chains) {
-      getSharedData()->chain_games_.push_back(env_loader);
+      // In win-chain lazy loading mode, games.txt is indexed not parsed here.
+      // chain_games_ is no longer used; games are loaded on-demand per batch.
     } else {
       getSharedData()->env_loaders_map_[getRank(env_loader)].push_back(env_loader);
     }
@@ -57,7 +60,7 @@ bool StDataLoaderThread::sampleData()
 const EnvironmentLoader& StDataLoaderThread::getEnvLoader(const GamePosition& gp)
 {
   if (strength::bt_use_win_chains) {
-    return getSharedData()->chain_games_[gp.env_id_];
+    return getSharedData()->batch_chain_games_[gp.env_id_];
   }
   return getSharedData()->env_loaders_map_.at(gp.rank_)[gp.env_id_];
 }
@@ -154,16 +157,13 @@ GamePosition StDataLoaderThread::sampleTrainingData()
 {
   GamePosition gp;
   if (strength::bt_use_win_chains) {
-    if (getSharedData()->chain_games_.empty()) {
-      std::cerr << "WARN: sampleTrainingData with empty chain_games_" << std::endl;
-      gp.rank_ = 0;
-      gp.env_id_ = 0;
-      gp.pos_ = 0;
-      return gp;
+    if (getSharedData()->batch_chain_games_.empty()) {
+      std::cerr << "WARN: sampleTrainingData called with empty batch_chain_games_ (should not happen for BT win-chains)" << std::endl;
+      return GamePosition(0, 0, 0);
     }
     gp.rank_ = 0;
-    gp.env_id_ = Random::randInt() % getSharedData()->chain_games_.size();
-    gp.pos_ = Random::randInt() % getSharedData()->chain_games_[gp.env_id_].getActionPairs().size();
+    gp.env_id_ = Random::randInt() % getSharedData()->batch_chain_games_.size();
+    gp.pos_ = Random::randInt() % getSharedData()->batch_chain_games_[gp.env_id_].getActionPairs().size();
     return gp;
   }
   auto it = getSharedData()->env_loaders_map_.begin();
@@ -190,20 +190,105 @@ void StDataLoader::initialize()
   Random::seed(seed);
 }
 
+void StDataLoader::indexChainGamesFile(const std::string& file_name)
+{
+  std::ifstream fin(file_name, std::ios::binary);
+  if (!fin) {
+    std::cerr << "ERROR: cannot open chain games file " << file_name << std::endl;
+    return;
+  }
+
+  getSharedData()->chain_games_file_ = file_name;
+  getSharedData()->chain_game_offsets_.clear();
+
+  std::streamoff offset = 0;
+  std::string line;
+  while (std::getline(fin, line)) {
+    getSharedData()->chain_game_offsets_.push_back(offset);
+    offset = fin.tellg();
+  }
+
+  std::cerr << "=== lazy win-chain loader ===" << std::endl;
+  std::cerr << "games_file=" << file_name << std::endl;
+  std::cerr << "indexed_games=" << getSharedData()->chain_game_offsets_.size() << std::endl;
+  std::cerr << "offset_index_bytes=" << (getSharedData()->chain_game_offsets_.size() * sizeof(std::streamoff)) << std::endl;
+
+  // Validate index
+  if (getSharedData()->chain_game_offsets_.empty()) {
+    std::cerr << "ERROR: no games indexed from " << file_name << std::endl;
+    return;
+  }
+
+  // Spot-check: verify games at start, middle, end can be read and parsed
+  std::vector<size_t> check_indices = {0};
+  if (getSharedData()->chain_game_offsets_.size() > 1) {
+    check_indices.push_back(getSharedData()->chain_game_offsets_.size() / 2);
+    check_indices.push_back(getSharedData()->chain_game_offsets_.size() - 1);
+  }
+  for (size_t idx : check_indices) {
+    std::ifstream fcheck(file_name, std::ios::binary);
+    fcheck.seekg(getSharedData()->chain_game_offsets_[idx]);
+    std::string check_line;
+    std::getline(fcheck, check_line);
+    if (check_line.empty()) {
+      std::cerr << "WARN: empty line at index " << idx << std::endl;
+      continue;
+    }
+    EnvironmentLoader test_loader = loadGame(check_line);
+    if (test_loader.getActionPairs().empty()) {
+      std::cerr << "WARN: parsed game at index " << idx << " has no action pairs" << std::endl;
+    }
+  }
+}
+
+EnvironmentLoader StDataLoader::loadChainGame(int game_id)
+{
+  const auto& offsets = getSharedData()->chain_game_offsets_;
+  if (game_id < 0 || game_id >= static_cast<int>(offsets.size())) {
+    std::cerr << "ERROR: game_id " << game_id << " out of range [0, " << offsets.size() << ")" << std::endl;
+    return EnvironmentLoader();
+  }
+
+  std::ifstream fin(getSharedData()->chain_games_file_, std::ios::binary);
+  if (!fin) {
+    std::cerr << "ERROR: cannot open chain games file " << getSharedData()->chain_games_file_ << std::endl;
+    return EnvironmentLoader();
+  }
+
+  fin.seekg(offsets[game_id]);
+  std::string line;
+  std::getline(fin, line);
+
+  if (line.empty()) {
+    std::cerr << "ERROR: empty line at game_id " << game_id << std::endl;
+    return EnvironmentLoader();
+  }
+
+  EnvironmentLoader env_loader = loadGame(line);
+  if (env_loader.getActionPairs().empty()) {
+    std::cerr << "WARN: parsed game " << game_id << " has no action pairs" << std::endl;
+  }
+  return env_loader;
+}
+
 void StDataLoader::loadDataFromFile(const std::string& file_name)
 {
+  if (strength::bt_use_win_chains) {
+    indexChainGamesFile(file_name);
+
+    int label = 0;
+    getSharedData()->rank_label_map_.clear();
+    for (int i = 0; i < strength::bt_num_rank_per_batch; ++i) {
+      getSharedData()->rank_label_map_[i] = label++;
+    }
+    return;
+  }
+
   DataLoader::loadDataFromFile(file_name);
 
   int label = 0;
   getSharedData()->rank_label_map_.clear();
-  if (strength::bt_use_win_chains) {
-    std::cerr << "loaded chain games=" << getSharedData()->chain_games_.size() << std::endl;
-    for (int i = 0; i < strength::bt_num_rank_per_batch; ++i) {
-      getSharedData()->rank_label_map_[i] = label++;
-    }
-  } else {
-    for (auto& m : getSharedData()->env_loaders_map_) { getSharedData()->rank_label_map_[m.first] = label++; }
-  }
+  for (auto& m : getSharedData()->env_loaders_map_) { getSharedData()->rank_label_map_[m.first] = label++; }
 }
 
 void StDataLoader::loadWinChainsFromFile(const std::string& file_name)
@@ -233,7 +318,7 @@ void StDataLoader::loadWinChainsFromFile(const std::string& file_name)
       }
       int game_id = std::stoi(token.substr(0, colon));
       char color = token[colon + 1];
-      if (game_id < 0 || game_id >= static_cast<int>(getSharedData()->chain_games_.size())) {
+      if (game_id < 0 || game_id >= static_cast<int>(getSharedData()->chain_game_offsets_.size())) {
         std::cerr << "WARN: game_id " << game_id << " out of range at line " << line_no << std::endl;
         ok = false;
         break;
@@ -273,26 +358,70 @@ void StDataLoader::sampleData()
   DataLoader::sampleData();
 }
 
-void StDataLoader::allocateBTWinChainPositions()
+void StDataLoader::selectBTWinChains(std::vector<const std::vector<WinChainSlot>*>& selected_chains)
 {
-  getSharedData()->bt_game_positions_.clear();
   const auto& chains = getSharedData()->win_chains_;
-  if (chains.empty() || getSharedData()->chain_games_.empty()) {
-    std::cerr << "ERROR: allocateBTWinChainPositions with no chains/games loaded"
-              << " chains=" << chains.size()
-              << " games=" << getSharedData()->chain_games_.size() << std::endl;
-    return;
+  selected_chains.clear();
+  selected_chains.reserve(strength::bt_num_batch_size);
+
+  for (int batch_index = 0; batch_index < strength::bt_num_batch_size; ++batch_index) {
+    const auto& chain = chains[Random::randInt() % chains.size()];
+    selected_chains.push_back(&chain);
+  }
+}
+
+void StDataLoader::loadBTBatchGames(const std::vector<const std::vector<WinChainSlot>*>& selected_chains)
+{
+  // Clear previous batch
+  getSharedData()->batch_chain_games_.clear();
+  getSharedData()->batch_game_id_map_.clear();
+
+  // Collect unique game IDs from selected chains
+  std::unordered_set<int> unique_game_ids;
+  for (const auto* chain : selected_chains) {
+    for (const auto& slot : *chain) {
+      unique_game_ids.insert(slot.game_id_);
+    }
   }
 
+  // Load each unique game
+  getSharedData()->batch_chain_games_.reserve(unique_game_ids.size());
+  int local_idx = 0;
+  for (int game_id : unique_game_ids) {
+    EnvironmentLoader env_loader = loadChainGame(game_id);
+    if (!env_loader.getActionPairs().empty()) {
+      getSharedData()->batch_chain_games_.push_back(std::move(env_loader));
+      getSharedData()->batch_game_id_map_[game_id] = local_idx++;
+    } else {
+      std::cerr << "WARN: game " << game_id << " failed to load, skipping" << std::endl;
+    }
+  }
+
+  std::cerr << "BT lazy batch: selected_chains=" << selected_chains.size()
+            << " game_references=" << (selected_chains.size() * strength::bt_num_rank_per_batch)
+            << " unique_games=" << unique_game_ids.size()
+            << " parsed_games=" << getSharedData()->batch_chain_games_.size() << std::endl;
+}
+
+void StDataLoader::allocateBTWinChainPositionsFromLoaded(const std::vector<const std::vector<WinChainSlot>*>& selected_chains)
+{
+  getSharedData()->bt_game_positions_.clear();
   const int num_rank = strength::bt_num_rank_per_batch;
   const int num_pos = strength::bt_num_position_per_rank;
   const int expected = strength::bt_num_batch_size * num_rank * num_pos;
 
-  for (int batch_index = 0; batch_index < strength::bt_num_batch_size; ++batch_index) {
-    const auto& chain = chains[Random::randInt() % chains.size()];
+  for (const auto* chain : selected_chains) {
     for (int slot = 0; slot < num_rank; ++slot) {
-      const WinChainSlot& cs = chain[slot];
-      const EnvironmentLoader& env_loader = getSharedData()->chain_games_[cs.game_id_];
+      const WinChainSlot& cs = (*chain)[slot];
+      auto it = getSharedData()->batch_game_id_map_.find(cs.game_id_);
+      if (it == getSharedData()->batch_game_id_map_.end()) {
+        std::cerr << "ERROR: game " << cs.game_id_ << " not loaded for batch; this should not happen" << std::endl;
+        // Don't create dummy positions - this would corrupt training data
+        // The game should have been loaded in loadBTBatchGames
+        continue;
+      }
+      int local_game_id = it->second;
+      const EnvironmentLoader& env_loader = getSharedData()->batch_chain_games_[local_game_id];
       env::Player player = static_cast<env::Player>(cs.player_);
       std::vector<int> positions;
       for (size_t j = 0; j < env_loader.getActionPairs().size(); ++j) {
@@ -308,15 +437,15 @@ void StDataLoader::allocateBTWinChainPositions()
       if (positions.empty()) {
         std::cerr << "WARN: empty game " << cs.game_id_ << "; skipping slot fill with pos 0" << std::endl;
         for (int j = 0; j < num_pos; ++j) {
-          getSharedData()->bt_game_positions_.emplace_back(GamePosition(slot, cs.game_id_, 0));
+          getSharedData()->bt_game_positions_.emplace_back(GamePosition(slot, local_game_id, 0));
         }
         continue;
       }
       std::random_shuffle(positions.begin(), positions.end());
       for (int j = 0; j < num_pos; ++j) {
         int pos = positions[j % positions.size()];
-        // rank_ = slot index (weak=0 ... strong=K-1); env_id_ = game index in chain_games_
-        getSharedData()->bt_game_positions_.emplace_back(GamePosition(slot, cs.game_id_, pos));
+        // rank_ = slot index (weak=0 ... strong=K-1); env_id_ = batch-local index in batch_chain_games_
+        getSharedData()->bt_game_positions_.emplace_back(GamePosition(slot, local_game_id, pos));
       }
     }
   }
@@ -324,6 +453,22 @@ void StDataLoader::allocateBTWinChainPositions()
     std::cerr << "WARN: bt_game_positions size "
               << getSharedData()->bt_game_positions_.size() << " != expected " << expected << std::endl;
   }
+}
+
+void StDataLoader::allocateBTWinChainPositions()
+{
+  const auto& chains = getSharedData()->win_chains_;
+  if (chains.empty() || getSharedData()->chain_game_offsets_.empty()) {
+    std::cerr << "ERROR: allocateBTWinChainPositions with no chains/games loaded"
+              << " chains=" << chains.size()
+              << " indexed_games=" << getSharedData()->chain_game_offsets_.size() << std::endl;
+    return;
+  }
+
+  std::vector<const std::vector<WinChainSlot>*> selected_chains;
+  selectBTWinChains(selected_chains);
+  loadBTBatchGames(selected_chains);
+  allocateBTWinChainPositionsFromLoaded(selected_chains);
 }
 
 void StDataLoader::allocateBTGamePositions()

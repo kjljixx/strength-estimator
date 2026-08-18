@@ -41,9 +41,15 @@ public:
   std::vector<GamePosition> bt_game_positions_;
   std::map<int, int> rank_label_map_;
   std::map<int, std::vector<EnvironmentLoader>> env_loaders_map_;
-  // Win-chain mode: flat game pool + chains (weak -> strong slots)
-  std::vector<EnvironmentLoader> chain_games_;
+
+  // Win-chain lazy loading: offset index + chains
+  std::string chain_games_file_;
+  std::vector<std::streamoff> chain_game_offsets_;
   std::vector<std::vector<WinChainSlot>> win_chains_;
+
+  // Per-batch game pool (discarded each batch)
+  std::vector<EnvironmentLoader> batch_chain_games_;
+  std::unordered_map<int, int> batch_game_id_map_;
 };
 
 class StDataLoaderThread : public minizero::learner::DataLoaderThread {
@@ -80,6 +86,13 @@ public:
 private:
   void allocateBTGamePositions();
   void allocateBTWinChainPositions();
+
+  // Win-chain lazy loading helpers
+  void indexChainGamesFile(const std::string& file_name);
+  EnvironmentLoader loadChainGame(int game_id);
+  void selectBTWinChains(std::vector<const std::vector<WinChainSlot>*>& selected_chains);
+  void loadBTBatchGames(const std::vector<const std::vector<WinChainSlot>*>& selected_chains);
+  void allocateBTWinChainPositionsFromLoaded(const std::vector<const std::vector<WinChainSlot>*>& selected_chains);
 };
 
 } // namespace strength
