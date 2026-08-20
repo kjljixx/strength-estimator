@@ -44,6 +44,7 @@ def savefig(path: str) -> None:
 
 def plot_player_freq(data: dict, out_path: str, top_n: int = 30) -> bool:
   top = (data.get("player_counts") or {}).get("top") or []
+  print(f"number of players with counts: {len(top)}", flush=True)
   if not top:
     print("skip player_freq: no data", flush=True)
     return False
