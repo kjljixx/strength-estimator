@@ -1,30 +1,25 @@
 import csv
+import os
 import subprocess
 import sys
 
-def parse_evaluator_output(output):
-  game_acc = {}
-  recording = False
-
-  for line in output.splitlines():
-    if 'Summarizing accuracy' in line:
-      recording = True
-      continue
-
-    if recording:
-      tokens = line.strip().split()
-      if len(tokens) >= 10 and tokens[0].isdigit():
-        game_num = int(tokens[0])
-        if 1 <= game_num <= 100:
-          game_acc[game_num] = float(tokens[9])
-
-  return game_acc
+def parse_line(line):
+  tokens = line.strip().split()
+  if len(tokens) >= 10 and tokens[0].isdigit():
+    game_num = int(tokens[0])
+    if 1 <= game_num <= 100:
+      return game_num, float(tokens[9])
+  return None, None
 
 def run_evaluations(model_dir, start_step=10000, max_step=100000, step_interval=10000):
   results = {}
 
   for step in range(start_step, max_step + 1, step_interval):
     weight_file = f'{model_dir}/weight_iter_{step}.pt'
+
+    if not os.path.exists(weight_file):
+      print(f'\nSkipping step {step}: file {weight_file} does not exist.')
+      continue
 
     cmd = [
       './build/chess/strength_chess',
@@ -34,23 +29,40 @@ def run_evaluations(model_dir, start_step=10000, max_step=100000, step_interval=
     ]
 
     print(f"\n{'='*60}\nRunning evaluation for step {step}...\n{'='*60}")
-    try:
-      proc = subprocess.run(cmd, capture_output=True, text=True)
 
-      if proc.stdout:
-        print(proc.stdout)
-      if proc.stderr:
-        print(proc.stderr, file=sys.stderr)
+    try:
+      proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+      )
+
+      game_acc = {}
+      recording = False
+
+      for line in proc.stdout:
+        print(line, end='')
+        if 'Summarizing accuracy' in line:
+          recording = True
+          continue
+
+        if recording:
+          g_num, acc = parse_line(line)
+          if g_num is not None:
+            game_acc[g_num] = acc
+
+      proc.wait()
 
       if proc.returncode != 0:
-        print(f'Process failed with exit code {proc.returncode}')
+        print(f'\nProcess crashed with exit code {proc.returncode}')
         continue
 
-      parsed = parse_evaluator_output(proc.stdout)
-      if parsed:
-        results[step] = parsed
+      if game_acc:
+        results[step] = game_acc
       else:
-        print(f'Warning: Failed to parse accuracy table for step {step}')
+        print(f'\nWarning: Failed to parse accuracy table for step {step}')
 
     except FileNotFoundError:
       print('Executable ./build/chess/strength_chess not found.')
