@@ -283,7 +283,7 @@ def main() -> None:
   print_summary(data)
   os.makedirs(out_dir, exist_ok=True)
 
-  plot_lorenz_curve(data, os.path.join(out_dir, "player_concentration.png"), os.path.join(args.data_dir, "games.txt"))
+  plot_lorenz_curve(data, os.path.join(args.data_dir, "games.txt"), os.path.join(out_dir, "player_concentration.png"))
   plot_player_freq(data, os.path.join(out_dir, "player_freq.png"), top_n=args.top_players)
   plot_color_by_slot(data, os.path.join(out_dir, "color_by_slot.png"))
   plot_sampling_yield(data, os.path.join(out_dir, "sampling_yield.png"))
