@@ -94,12 +94,9 @@ def plot_lorenz_curve(data: dict, games_path: str, out_path: str) -> bool:
   share_top10 = 100.0 - cum_games[idx_90]
 
   plt.figure(figsize=(7, 6))
-  plt.plot([0, 100], [0, 100], "--", color="gray", label="Line of Equality (Gini = 0)")
   plt.plot(cum_players, cum_games, color="#1f77b4", linewidth=2, label="Lorenz Curve")
-  plt.fill_between(cum_players, cum_players, cum_games, color="#1f77b4", alpha=0.15)
 
   stats_text = (
-      f"Gini Coefficient: {gini:.3f}\n"
       f"Top 1% players: {share_top1:.1f}% of games\n"
       f"Top 10% players: {share_top10:.1f}% of games"
   )
@@ -116,9 +113,9 @@ def plot_lorenz_curve(data: dict, games_path: str, out_path: str) -> bool:
 
   plt.xlim(0, 100)
   plt.ylim(0, 100)
-  plt.xlabel("Cumulative % of Players (least to most active)")
+  plt.xlabel("Cumulative % of Players")
   plt.ylabel("Cumulative % of Total Games")
-  plt.title(f"Player Game Concentration (Lorenz Curve, N={n:,} Players)")
+  plt.title(f"Player Game Concentration (N={n:,} Players)")
   plt.grid(True, linestyle=":", alpha=0.6)
   plt.legend(loc="lower right")
 
