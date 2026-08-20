@@ -11,7 +11,7 @@ def parse_line(line):
       return game_num, float(tokens[9])
   return None, None
 
-def run_evaluations(model_dir, start_step=10000, max_step=100000, step_interval=10000):
+def run_evaluations(model_dir, start_step=5000, max_step=170000, step_interval=5000):
   results = {}
 
   for step in range(start_step, max_step + 1, step_interval):
