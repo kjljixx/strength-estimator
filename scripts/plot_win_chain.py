@@ -94,7 +94,7 @@ def plot_lorenz_curve(data: dict, games_path: str, out_path: str) -> bool:
   share_top10 = 100.0 - cum_games[idx_90]
 
   plt.figure(figsize=(7, 6))
-  plt.plot(cum_players, cum_games, color="#1f77b4", linewidth=2, label="Lorenz Curve")
+  plt.plot(cum_players, cum_games, color="#1f77b4", linewidth=2, label="Player cumulative curve")
 
   stats_text = (
       f"Top 1% players: {share_top1:.1f}% of games\n"
