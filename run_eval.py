@@ -1,5 +1,4 @@
 import csv
-import re
 import subprocess
 import sys
 
@@ -34,16 +33,25 @@ def run_evaluations(model_dir, start_step=10000, max_step=100000, step_interval=
       '-conf_str', f'nn_file_name={weight_file}'
     ]
 
-    print(f'Running evaluation for step {step}...')
+    print(f"\n{'='*60}\nRunning evaluation for step {step}...\n{'='*60}")
     try:
-      proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+      proc = subprocess.run(cmd, capture_output=True, text=True)
+
+      if proc.stdout:
+        print(proc.stdout)
+      if proc.stderr:
+        print(proc.stderr, file=sys.stderr)
+
+      if proc.returncode != 0:
+        print(f'Process failed with exit code {proc.returncode}')
+        continue
+
       parsed = parse_evaluator_output(proc.stdout)
       if parsed:
         results[step] = parsed
       else:
         print(f'Warning: Failed to parse accuracy table for step {step}')
-    except subprocess.CalledProcessError as e:
-      print(f'Error executing step {step}: {e}')
+
     except FileNotFoundError:
       print('Executable ./build/chess/strength_chess not found.')
       sys.exit(1)
@@ -55,7 +63,7 @@ def run_evaluations(model_dir, start_step=10000, max_step=100000, step_interval=
       writer.writerow(['step'] + game_nums)
       for step in sorted(results.keys()):
         writer.writerow([step] + [results[step][g] for g in game_nums])
-    print('Successfully exported results to output.csv')
+    print('\nSuccessfully exported results to output.csv')
 
 if __name__ == '__main__':
   model_directory = './chess_bt_b32_r8_p7_20bx256-7e7ac9/model'
