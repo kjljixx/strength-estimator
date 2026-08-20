@@ -79,4 +79,4 @@ def run_evaluations(model_dir, start_step=5000, max_step=170000, step_interval=5
 
 if __name__ == '__main__':
   model_directory = './chess_bt_b32_r8_p7_20bx256-7e7ac9/model'
-  run_evaluations(model_directory, start_step=10000, max_step=100000, step_interval=10000)
+  run_evaluations(model_directory, start_step=5000, max_step=170000, step_interval=5000)
