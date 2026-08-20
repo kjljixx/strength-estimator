@@ -41,6 +41,86 @@ def savefig(path: str) -> None:
   plt.close()
   print(f"wrote {path}", flush=True)
 
+def count_all_players(games_path: str) -> collections.Counter:
+  """Scan games.txt to count appearances for ALL players."""
+  counts = collections.Counter()
+  pattern = re.compile(r"P[WB]\[(.*?)\]")
+  if not os.path.isfile(games_path):
+    return counts
+  print(f"scanning all player counts from {games_path}...", flush=True)
+  with open(games_path, "r", encoding="utf-8", errors="ignore") as f:
+    for line in f:
+      for m in pattern.finditer(line):
+        counts[m.group(1)] += 1
+  return counts
+
+
+def plot_lorenz_curve(data: dict, games_path: str, out_path: str) -> bool:
+  # Try full count from games.txt first; fall back to plot_data.json if missing
+  player_counts = count_all_players(games_path)
+  if player_counts:
+    counts = list(player_counts.values())
+  else:
+    player_data = data.get("player_counts") or {}
+    counts = []
+    if "top" in player_data:
+      counts = [item[1] if isinstance(item, (list, tuple)) else item for item in player_data["top"]]
+
+  if not counts:
+    print("skip lorenz_curve: no player count data", flush=True)
+    return False
+
+  counts = np.array(sorted(counts), dtype=float)
+  n = len(counts)
+  total_games = counts.sum()
+
+  if n <= 1 or total_games == 0:
+    print("skip lorenz_curve: insufficient data", flush=True)
+    return False
+
+  cum_players = np.linspace(0, 100, n + 1)
+  cum_games = np.insert(np.cumsum(counts) / total_games * 100, 0, 0)
+
+  index = np.arange(1, n + 1)
+  gini = (2 * np.sum(index * counts) / (n * total_games)) - (n + 1) / n
+
+  idx_99 = int(np.floor(n * 0.99))
+  idx_90 = int(np.floor(n * 0.90))
+
+  share_top1 = 100.0 - cum_games[idx_99]
+  share_top10 = 100.0 - cum_games[idx_90]
+
+  plt.figure(figsize=(7, 6))
+  plt.plot([0, 100], [0, 100], "--", color="gray", label="Line of Equality (Gini = 0)")
+  plt.plot(cum_players, cum_games, color="#1f77b4", linewidth=2, label="Lorenz Curve")
+  plt.fill_between(cum_players, cum_players, cum_games, color="#1f77b4", alpha=0.15)
+
+  stats_text = (
+      f"Gini Coefficient: {gini:.3f}\n"
+      f"Top 1% players: {share_top1:.1f}% of games\n"
+      f"Top 10% players: {share_top10:.1f}% of games"
+  )
+
+  plt.gca().text(
+      0.05,
+      0.78,
+      stats_text,
+      transform=plt.gca().transAxes,
+      fontsize=10.5,
+      verticalalignment="top",
+      bbox=dict(boxstyle="round,pad=0.5", facecolor="white", alpha=0.85),
+  )
+
+  plt.xlim(0, 100)
+  plt.ylim(0, 100)
+  plt.xlabel("Cumulative % of Players (least to most active)")
+  plt.ylabel("Cumulative % of Total Games")
+  plt.title(f"Player Game Concentration (Lorenz Curve, N={n:,} Players)")
+  plt.grid(True, linestyle=":", alpha=0.6)
+  plt.legend(loc="lower right")
+
+  savefig(out_path)
+  return True
 
 def plot_player_freq(data: dict, out_path: str, top_n: int = 30) -> bool:
   top = (data.get("player_counts") or {}).get("top") or []
@@ -200,6 +280,7 @@ def main() -> None:
   print_summary(data)
   os.makedirs(out_dir, exist_ok=True)
 
+  plot_lorenz_curve(data, os.path.join(out_dir, "player_concentration.png"), os.path.join(args.data_dir, "games.txt"))
   plot_player_freq(data, os.path.join(out_dir, "player_freq.png"), top_n=args.top_players)
   plot_color_by_slot(data, os.path.join(out_dir, "color_by_slot.png"))
   plot_sampling_yield(data, os.path.join(out_dir, "sampling_yield.png"))
