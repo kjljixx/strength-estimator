@@ -21,7 +21,9 @@ def getRank(elo):
 
 def process_file(file_name):
     filtered_lines = []
+    print("hi")
     for i in range(min_elo, max_elo, interval):
+        print("i")
         output_dir = f"rank_{lines_per_file}_{min_elo}_{max_elo}_{interval}interval/train/sgf_{i}_{i + interval}"
         os.makedirs(output_dir, exist_ok=True)
         output_dir = f"rank_{lines_per_file}_{min_elo}_{max_elo}_{interval}interval/test_origin/sgf_{i}_{i + interval}"
