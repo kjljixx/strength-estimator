@@ -10,6 +10,7 @@ max_elo = 2600
 interval = 200
 
 # sample numbers of line in each file
+lines_per_file = 50000
 evaluation_lines_per_file = 2200
 
 input_dir = "training_sgf"
