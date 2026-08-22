@@ -65,5 +65,5 @@ def process_file(file_name):
 
 
 with ThreadPoolExecutor() as executor:
-    executor.map(process_file, os.listdir(input_dir))
+    list(executor.map(process_file, os.listdir(input_dir)))
 print("complete!")
