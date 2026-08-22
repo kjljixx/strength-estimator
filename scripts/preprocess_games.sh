@@ -30,7 +30,7 @@ run_elo_pipeline() {
   python3 random_sample.py
 
   declare -A folder_map
-  folder_map["rank_50000_1000_2600_200interval/train"]="training_sgf_chess"
+  folder_map["rank_50000_1000_2600_200interval/train"]="training_chess_chain_raw"
   folder_map["rank_50000_1000_2600_200interval/test"]="query_sgf_chess"
   folder_map["rank_50000_1000_2600_200interval/cand"]="candidate_sgf_chess"
 
@@ -47,17 +47,17 @@ run_elo_pipeline() {
       fi
     done
   done
-  echo "Elo-bin files merged into training/query/candidate dirs."
+  echo "Elo-bin files merged into training_chess_chain_raw/query/candidate dirs."
 }
 
 run_chain_pipeline() {
-  if [[ ! -d training_sgf_chess ]] || [[ -z "$(ls -A training_sgf_chess 2>/dev/null)" ]]; then
-    echo "ERROR: training_sgf_chess/ missing or empty; run Elo split first" >&2
+  if [[ ! -d training_chess_chain_raw ]] || [[ -z "$(ls -A training_chess_chain_raw 2>/dev/null)" ]]; then
+    echo "ERROR: training_chess_chain_raw/ missing or empty; run Elo split first" >&2
     exit 1
   fi
-  echo "Building win-chain ordinal data from training_sgf_chess/ into training_sgf_chess_chain/"
+  echo "Building win-chain ordinal data from training_chess_chain_raw/ into training_sgf_chess_chain/"
   python3 ./scripts/sgf_filter_win_chain.py \
-    --input-dir training_sgf_chess \
+    --input-dir training_chess_chain_raw \
     --output-dir training_sgf_chess_chain \
     --chain-length 8 \
     --max-chains 50000 \

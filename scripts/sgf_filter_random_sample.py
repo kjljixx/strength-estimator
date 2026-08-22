@@ -10,7 +10,7 @@ max_elo = 2600
 interval = 200
 
 # sample numbers of line in each file
-lines_per_file = 50000
+evaluation_lines_per_file = 2200
 
 input_dir = "training_sgf"
 
@@ -45,20 +45,20 @@ def process_file(file_name):
         print(
             f"{file_name} sample {i}~{i+interval}: {len(filtered_lines[getRank(i)])} lines"
         )
-        random_lines = random.sample(
-            filtered_lines[getRank(i)],
-            min(lines_per_file, len(filtered_lines[getRank(i)])),
-        )
-        sep = int(len(random_lines) * 0.8)
-        output_dir = f"rank_{lines_per_file}_{min_elo}_{max_elo}_{interval}interval/train/sgf_{i}_{i + interval}"
+        random.shuffle(filtered_lines[getRank(i)])
+        evaluation_lines = filtered_lines[getRank(i)][:
+            min(evaluation_lines_per_file, len(filtered_lines[getRank(i)]))
+        ]
+        training_lines = filtered_lines[getRank(i)][len(evaluation_lines):]
+        output_dir = f"rank_50000_{min_elo}_{max_elo}_{interval}interval/train/sgf_{i}_{i + interval}"
         output_file = os.path.join(output_dir, file_name)
         with open(output_file, "w", encoding="utf-8") as f_out:
-            f_out.writelines(random_lines[:sep])
-        output_dir = f"rank_{lines_per_file}_{min_elo}_{max_elo}_{interval}interval/test_origin/sgf_{i}_{i + interval}"
+            f_out.writelines(training_lines)
+        output_dir = f"rank_50000_{min_elo}_{max_elo}_{interval}interval/test_origin/sgf_{i}_{i + interval}"
         output_file = os.path.join(output_dir, file_name)
 
         with open(output_file, "w", encoding="utf-8") as f_out:
-            f_out.writelines(random_lines[sep:])
+            f_out.writelines(evaluation_lines)
     print(f"------finish {file_name} sample {min_elo}~{max_elo}------")
 
 

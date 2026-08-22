@@ -6,7 +6,7 @@ def process_file(in_file, cand, test):
     num_lines = cand + test
     with open(in_file, "r") as file:
         lines = file.readlines()
-        selected_lines = random.sample(lines, num_lines)
+        selected_lines = random.sample(lines, min(num_lines, len(lines)))
         cand_lines = selected_lines[:cand]
         test_lines = selected_lines[cand:]
     target_dir = os.path.dirname(in_file).replace("test_origin", "cand")
@@ -33,9 +33,9 @@ def process_folder(folder_path):
                         try:
                             x = int(parts[1])
                             if x < 1000 or x >= 2600:
-                                process_file(os.path.join(root, file), 5, 50)
+                                process_file(os.path.join(root, file), 200, 2000)
                             else:
-                                process_file(os.path.join(root, file), 20, 200)
+                                process_file(os.path.join(root, file), 200, 2000)
                         except ValueError:
                             pass
 
