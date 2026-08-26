@@ -78,5 +78,5 @@ def run_evaluations(model_dir, start_step=5000, max_step=170000, step_interval=5
     print('\nSuccessfully exported results to output.csv')
 
 if __name__ == '__main__':
-  model_directory = './chess_bt_b32_r8_p7_20bx256-7e7ac9/model'
-  run_evaluations(model_directory, start_step=5000, max_step=170000, step_interval=5000)
+  model_directory = './chess_bt_b32_r8_p7_20bx256-7e7ac9unpolluted/model'
+  run_evaluations(model_directory, start_step=5000, max_step=160000, step_interval=5000)
