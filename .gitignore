@@ -20,3 +20,4 @@ training_sgf_chess/
 rank_50000_1000_2600_200interval/
 chess.tar.gz
 download_chess_game/
+tests
