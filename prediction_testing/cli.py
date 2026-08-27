@@ -14,7 +14,7 @@ def build_parser() -> argparse.ArgumentParser:
   parser = argparse.ArgumentParser(description="Run chess outcome prediction evaluation")
   parser.add_argument("game_paths", nargs="+", type=Path, help="SGF game files")
   parser.add_argument("--output-dir", type=Path, default=Path("prediction_output"))
-  parser.add_argument("--context-size", type=int, default=10)
+  parser.add_argument("--context-size", type=int, default=8)
   parser.add_argument("--exclude-same-day-context", action="store_true")
   parser.add_argument("--seed", type=int, default=0)
   return parser
