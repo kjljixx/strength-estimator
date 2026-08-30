@@ -150,10 +150,7 @@ class GameCatalog:
       with path.open("rb") as handle, mmap.mmap(
         handle.fileno(), 0, access=mmap.ACCESS_READ,
       ) as content:
-        line_count = sum(1 for _ in iter(content.readline, b""))
-        content.seek(0)
         with tqdm(
-          total=line_count,
           desc=f"Parsing {path.name}",
           unit="game",
           leave=False,
