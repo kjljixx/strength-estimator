@@ -24,8 +24,19 @@ class GameRecord:
   event: str = "Blitz"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GameMetadata:
+  __slots__ = (
+    "game_id",
+    "played_at",
+    "white_player",
+    "black_player",
+    "white_elo",
+    "black_elo",
+    "result",
+    "event",
+  )
+
   game_id: str
   played_at: datetime
   white_player: str
@@ -33,7 +44,7 @@ class GameMetadata:
   white_elo: int
   black_elo: int
   result: GameResult
-  event: str = "Blitz"
+  event: str
 
 
 @dataclass(frozen=True)
