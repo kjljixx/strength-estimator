@@ -150,6 +150,7 @@ class GameCatalog:
     for path in tqdm(paths, desc="Loading catalog", unit="file"):
       if path.stat().st_size == 0:
         continue
+      reached_game_limit = False
       with path.open("rb") as handle, mmap.mmap(
         handle.fileno(), 0, access=mmap.ACCESS_READ,
       ) as content:
@@ -161,6 +162,7 @@ class GameCatalog:
         ) as progress:
           matches = SGF_HEADER.finditer(content)
           match = next(matches, None)
+          next_match = None
           idx = 0
           while match is not None:
             next_match = next(matches, None)
@@ -187,11 +189,15 @@ class GameCatalog:
               next_start = next_match.start() if next_match is not None else len(content)
               self._sgf_spans.append((path, match.start(), next_start))
               self._game_row_indices[game_id] = game_row_idx
-              if max_games_to_load is not None and len(self._metadata) > max_games_to_load:
-                return
+              if max_games_to_load is not None and len(self._metadata) >= max_games_to_load:
+                reached_game_limit = True
+                break
             progress.update()
             match = next_match
             idx += 1
+          del match, next_match, matches
+      if reached_game_limit:
+        return
 
   @property
   def games(self) -> tuple[int, ...]:
