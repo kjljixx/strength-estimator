@@ -137,16 +137,16 @@ class GameCatalog:
   def __init__(self) -> None:
     self._metadata: list[GameMetadata] = []
     self._sgf_spans: list[tuple[Path, int, int] | None] = []
-    self._inline_sgf: dict[int, str] = {}
     self._sgf_cache: dict[int, str] = {}
+    self._game_row_indices: dict[str, int] = {}
 
-  def add(self, game: GameRecord, sgf: str) -> None:
+  def add(self, game: GameRecord) -> None:
     game_row_idx = len(self._metadata)
     self._metadata.append(self._metadata_from_game(game))
     self._sgf_spans.append(None)
-    self._inline_sgf[game_row_idx] = sgf
+    self._game_row_indices[game.game_id] = game_row_idx
 
-  def index_paths(self, paths: Sequence[Path], max_games_to_load: int) -> None:
+  def index_paths(self, paths: Sequence[Path], max_games_to_load: int | None) -> None:
     for path in tqdm(paths, desc="Loading catalog", unit="file"):
       if path.stat().st_size == 0:
         continue
@@ -159,7 +159,11 @@ class GameCatalog:
           leave=False,
           position=1,
         ) as progress:
-          for idx, match in enumerate(SGF_HEADER.finditer(content)):
+          matches = SGF_HEADER.finditer(content)
+          match = next(matches, None)
+          idx = 0
+          while match is not None:
+            next_match = next(matches, None)
             result = parse_result(match.group(1))
             if result is not None:
               played_at = datetime.strptime(match.group(5).decode(), "%Y.%m.%d")
@@ -179,10 +183,15 @@ class GameCatalog:
                   event=match.group(2).decode("utf-8", errors="replace") or "Blitz",
                 )
               )
-              self._sgf_spans.append((path, match.start(), match.end()))
+              game_row_idx = len(self._metadata) - 1
+              next_start = next_match.start() if next_match is not None else len(content)
+              self._sgf_spans.append((path, match.start(), next_start))
+              self._game_row_indices[game_id] = game_row_idx
               if max_games_to_load is not None and len(self._metadata) > max_games_to_load:
                 return
             progress.update()
+            match = next_match
+            idx += 1
 
   @property
   def games(self) -> tuple[int, ...]:
@@ -214,19 +223,22 @@ class GameCatalog:
     cached = self._sgf_cache.get(game_row_idx)
     if cached is not None:
       return cached
-    inline = self._inline_sgf.get(game_row_idx)
-    if inline is not None:
-      self._sgf_cache[game_row_idx] = inline
-      return inline
     span = self._sgf_spans[game_row_idx]
     if span is None:
-      raise KeyError(f"no source span for game row {game_row_idx}")
+      raise KeyError(f"no source SGF for game row {game_row_idx}")
     path, start, end = span
     with path.open("rb") as handle:
       handle.seek(start)
       sgf = handle.read(end - start).decode("utf-8", errors="replace")
     self._sgf_cache[game_row_idx] = sgf
     return sgf
+
+  def load_sgf_by_id(self, game_id: str) -> str:
+    try:
+      game_row_idx = self._game_row_indices[game_id]
+    except KeyError as error:
+      raise KeyError(f"unknown game ID: {game_id}") from error
+    return self.load_sgf(game_row_idx)
 
   @staticmethod
   def _metadata_from_game(game: GameRecord) -> GameMetadata:
@@ -246,7 +258,11 @@ class PredictionDataFilter:
   def __init__(self, selector: ContextSelector | None = None):
     self._selector = selector or make_selector()
 
-  def load_catalog(self, paths: Sequence[Path], max_games_to_load: int) -> GameCatalog:
+  def load_catalog(
+    self,
+    paths: Sequence[Path],
+    max_games_to_load: int | None = None,
+  ) -> GameCatalog:
     catalog = GameCatalog()
     catalog.index_paths(paths, max_games_to_load)
     return catalog
