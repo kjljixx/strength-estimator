@@ -150,28 +150,37 @@ class GameCatalog:
       with path.open("rb") as handle, mmap.mmap(
         handle.fileno(), 0, access=mmap.ACCESS_READ,
       ) as content:
-        for idx, match in enumerate(SGF_HEADER.finditer(content)):
-          result = parse_result(match.group(1))
-          if result is None:
-            continue
-          played_at = datetime.strptime(match.group(5).decode(), "%Y.%m.%d")
-          white_elo = int(match.group(6) or 0)
-          black_elo = int(match.group(7) or 0)
-          digest = hashlib.sha1(match.group(0)).hexdigest()[:12]
-          game_id = f"{path.stem}:{digest}:{idx}"
-          self._games.append(
-            GameRecord(
-              game_id=game_id,
-              played_at=played_at,
-              white_player=match.group(3).decode("utf-8", errors="replace"),
-              black_player=match.group(4).decode("utf-8", errors="replace"),
-              white_elo=white_elo,
-              black_elo=black_elo,
-              result=result,
-              event=match.group(2).decode("utf-8", errors="replace") or "Blitz",
-            )
-          )
-          self._sgf_spans[game_id] = (path, match.start(), match.end())
+        line_count = sum(1 for _ in iter(content.readline, b""))
+        content.seek(0)
+        with tqdm(
+          total=line_count,
+          desc=f"Parsing {path.name}",
+          unit="game",
+          leave=False,
+          position=1,
+        ) as progress:
+          for idx, match in enumerate(SGF_HEADER.finditer(content)):
+            result = parse_result(match.group(1))
+            if result is not None:
+              played_at = datetime.strptime(match.group(5).decode(), "%Y.%m.%d")
+              white_elo = int(match.group(6) or 0)
+              black_elo = int(match.group(7) or 0)
+              digest = hashlib.sha1(match.group(0)).hexdigest()[:12]
+              game_id = f"{path.stem}:{digest}:{idx}"
+              self._games.append(
+                GameRecord(
+                  game_id=game_id,
+                  played_at=played_at,
+                  white_player=match.group(3).decode("utf-8", errors="replace"),
+                  black_player=match.group(4).decode("utf-8", errors="replace"),
+                  white_elo=white_elo,
+                  black_elo=black_elo,
+                  result=result,
+                  event=match.group(2).decode("utf-8", errors="replace") or "Blitz",
+                )
+              )
+              self._sgf_spans[game_id] = (path, match.start(), match.end())
+            progress.update()
 
   @property
   def games(self) -> tuple[GameRecord, ...]:
