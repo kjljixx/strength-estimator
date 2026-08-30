@@ -21,7 +21,6 @@ class GameRecord:
   white_elo: int
   black_elo: int
   result: GameResult
-  raw_sgf: str
   event: str = "Blitz"
 
 
@@ -33,7 +32,6 @@ class ContextGame:
   opponent_elo_at_game: int
   result_from_target_perspective: Literal["win", "draw", "loss"]
   played_at: datetime
-  raw_sgf: str
 
 
 @dataclass(frozen=True)
@@ -86,6 +84,7 @@ class ExampleManifest:
 
 @dataclass(frozen=True)
 class FilteredPredictionDataset:
+  catalog: "GameCatalog"
   examples: tuple[PredictionExample, ...]
   manifests: tuple[ExampleManifest, ...]
   exclusion_counts: Mapping[str, int]

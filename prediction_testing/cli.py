@@ -28,8 +28,10 @@ def main(argv: list[str] | None = None) -> int:
     seed=args.seed,
   )
   data_filter = PredictionDataFilter()
-  games = data_filter.load_games(args.game_paths)
-  dataset = data_filter.build_examples(games, policy)
+  catalog = data_filter.load_catalog(args.game_paths)
+  print(f"Loaded {len(catalog.games)} games from {len(args.game_paths)} files")
+  dataset = data_filter.build_examples(catalog, policy)
+  print(f"Built {len(dataset.examples)} prediction examples with exclusions: {dataset.exclusion_counts}")
 
   model = EloBaselineModel()
   result = PredictionEvaluator().run(

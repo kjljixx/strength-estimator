@@ -21,3 +21,7 @@ rank_50000_1000_2600_200interval/
 chess.tar.gz
 download_chess_game/
 tests
+
+prediction_output/
+training_sgf_*/
+chess_bt_b32_*

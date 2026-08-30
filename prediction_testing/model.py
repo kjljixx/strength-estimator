@@ -76,6 +76,7 @@ class StrengthDifferenceModel:
   def __init__(
     self,
     scorer: Callable[[str], float],
+    sgf_loader: Callable[[str], str],
     *,
     across_games: str = "mean",
     color_normalization: bool = True,
@@ -85,6 +86,7 @@ class StrengthDifferenceModel:
     checkpoint_hash: str = "default",
   ):
     self.scorer = scorer
+    self.sgf_loader = sgf_loader
     self.across_games = across_games
     self.color_normalization = color_normalization
     self.color_bias = color_bias
@@ -97,10 +99,10 @@ class StrengthDifferenceModel:
     if not 0 <= self.draw_rate < 1:
       raise ValueError("draw_rate must be in [0, 1)")
 
-  def _score_game(self, game_id: str, raw_sgf: str) -> float:
+  def _score_game(self, game_id: str) -> float:
     key = f"{self.checkpoint_hash}:{game_id}"
     if key not in self._cache:
-      self._cache[key] = self.scorer(raw_sgf)
+      self._cache[key] = self.scorer(self.sgf_loader(game_id))
     return self._cache[key]
 
   def _aggregate(self, values: Sequence[float]) -> float:
@@ -120,7 +122,7 @@ class StrengthDifferenceModel:
     ctx = example.white_context if side == "white" else example.black_context
     scores: list[float] = []
     for game in ctx.games:
-      score = self._score_game(game.game_id, game.raw_sgf)
+      score = self._score_game(game.game_id)
       if self.color_normalization and game.target_color == "black":
         score = -score
       scores.append(score)

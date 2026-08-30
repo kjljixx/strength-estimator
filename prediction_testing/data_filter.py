@@ -98,7 +98,6 @@ def target_perspective(
     opponent_elo_at_game=opponent_elo,
     result_from_target_perspective=outcome,
     played_at=game.played_at,
-    raw_sgf=game.raw_sgf,
   )
 
 
@@ -130,12 +129,18 @@ def make_selector() -> ContextSelector:
   return MostRecentSelector()
 
 
-class PredictionDataFilter:
-  def __init__(self, selector: ContextSelector | None = None):
-    self._selector = selector or make_selector()
+class GameCatalog:
+  def __init__(self) -> None:
+    self._games: list[GameRecord] = []
+    self._sgf_spans: dict[str, tuple[Path, int, int]] = {}
+    self._inline_sgf: dict[str, str] = {}
+    self._sgf_cache: dict[str, str] = {}
 
-  def load_games(self, paths: Sequence[Path]) -> list[GameRecord]:
-    games: list[GameRecord] = []
+  def add(self, game: GameRecord, sgf: str) -> None:
+    self._games.append(game)
+    self._inline_sgf[game.game_id] = sgf
+
+  def index_paths(self, paths: Sequence[Path]) -> None:
     for path in paths:
       text = path.read_text(encoding="utf-8", errors="replace")
       for idx, match in enumerate(SGF_HEADER.finditer(text)):
@@ -145,29 +150,57 @@ class PredictionDataFilter:
         played_at = datetime.strptime(match.group(5), "%Y.%m.%d")
         white_elo = int(match.group(6) or 0)
         black_elo = int(match.group(7) or 0)
-        raw = match.group(0)
-        game_id = hashlib.sha1(raw.encode()).hexdigest()[:12]
-        games.append(
+        digest = hashlib.sha1(match.group(0).encode()).hexdigest()[:12]
+        game_id = f"{path.stem}:{digest}:{idx}"
+        self._games.append(
           GameRecord(
-            game_id=f"{path.stem}:{game_id}:{idx}",
+            game_id=game_id,
             played_at=played_at,
             white_player=match.group(3),
             black_player=match.group(4),
             white_elo=white_elo,
             black_elo=black_elo,
             result=result,
-            raw_sgf=raw,
             event=match.group(2) or "Blitz",
           )
         )
-    games.sort(key=lambda g: (g.played_at, g.game_id))
-    return games
+        self._sgf_spans[game_id] = (path, match.start(), match.end())
+
+  @property
+  def games(self) -> tuple[GameRecord, ...]:
+    return tuple(sorted(self._games, key=lambda g: (g.played_at, g.game_id)))
+
+  def load_sgf(self, game_id: str) -> str:
+    cached = self._sgf_cache.get(game_id)
+    if cached is not None:
+      return cached
+    inline = self._inline_sgf.get(game_id)
+    if inline is not None:
+      self._sgf_cache[game_id] = inline
+      return inline
+    path, start, end = self._sgf_spans[game_id]
+    with path.open(encoding="utf-8", errors="replace") as handle:
+      handle.seek(start)
+      sgf = handle.read(end - start)
+    self._sgf_cache[game_id] = sgf
+    return sgf
+
+
+class PredictionDataFilter:
+  def __init__(self, selector: ContextSelector | None = None):
+    self._selector = selector or make_selector()
+
+  def load_catalog(self, paths: Sequence[Path]) -> GameCatalog:
+    catalog = GameCatalog()
+    catalog.index_paths(paths)
+    return catalog
 
   def build_examples(
     self,
-    games: Sequence[GameRecord],
+    catalog: GameCatalog,
     policy: ContextPolicy,
   ) -> FilteredPredictionDataset:
+    games = catalog.games
     selector = self._selector
     exclusions: Counter[str] = Counter({k: 0 for k in EXCLUSION_KEYS})
     seen_ids: set[str] = set()
@@ -205,6 +238,7 @@ class PredictionDataFilter:
         by_player[game.black_player], game, game.black_player, policy,
       )
 
+
       if len(white_eligible) < policy.context_size:
         exclusions["white_insufficient_context"] += 1
         continue
@@ -239,6 +273,7 @@ class PredictionDataFilter:
       player_predictions[game.black_player] += 1
 
     return FilteredPredictionDataset(
+      catalog=catalog,
       examples=tuple(examples),
       manifests=tuple(manifests),
       exclusion_counts=dict(exclusions),
