@@ -44,6 +44,24 @@ def strength_to_probs(
   return white, draw_rate, black, max(probs, key=probs.get)
 
 
+def elo_to_probs(
+  white_elo: float,
+  black_elo: float,
+  *,
+  draw_rate: float,
+  color_bias: float = 0.0,
+) -> tuple[float, float, float, GameResult]:
+  expected_white = 1.0 / (1.0 + 10.0 ** ((black_elo - white_elo - color_bias) / 400.0))
+  white = (1.0 - draw_rate) * expected_white
+  black = (1.0 - draw_rate) * (1.0 - expected_white)
+  probs = {
+    GameResult.WHITE_WIN: white,
+    GameResult.DRAW: draw_rate,
+    GameResult.BLACK_WIN: black,
+  }
+  return white, draw_rate, black, max(probs, key=probs.get)
+
+
 class EloBaselineModel:
   def __init__(self, draw_rate: float = 0.04):
     self.draw_rate = draw_rate
@@ -73,6 +91,17 @@ class EloBaselineModel:
 
 
 class StrengthDifferenceModel:
+  # 0 -0.110919
+  # 1 -0.0404942
+  # 2 0.0264197
+  # 3 0.153585
+  # 4 0.257167
+  # 5 0.389452
+  # 6 0.453127
+  # 7 0.49278  
+  score_to_elo_slope = 2099.249546736356
+  score_to_elo_intercept = 1374.608727864828
+
   def __init__(
     self,
     scorer: Callable[[str], float],
@@ -82,7 +111,7 @@ class StrengthDifferenceModel:
     color_normalization: bool = True,
     color_bias: float = 0.0,
     strength_scale: float = 1.0,
-    draw_rate: float = 0.1,
+    draw_rate: float = 0.04,
     checkpoint_hash: str = "default",
   ):
     self.scorer = scorer
@@ -128,15 +157,19 @@ class StrengthDifferenceModel:
       scores.append(score)
     return self._aggregate(scores)
 
+  def score_to_elo(self, score: float) -> float:
+    return self.score_to_elo_slope * score + self.score_to_elo_intercept
+
   def predict(self, example: PredictionExample) -> GamePrediction:
     white_strength = self._player_strength(example, "white")
     black_strength = self._player_strength(example, "black")
-    white, draw, black, predicted = strength_to_probs(
-      white_strength,
-      black_strength,
+    white_elo = self.score_to_elo(white_strength)
+    black_elo = self.score_to_elo(black_strength)
+    white, draw, black, predicted = elo_to_probs(
+      self.strength_scale * white_elo,
+      self.strength_scale * black_elo,
       draw_rate=self.draw_rate,
-      strength_scale=self.strength_scale,
-      color_bias=self.color_bias,
+      color_bias=self.score_to_elo_slope * self.color_bias,
     )
     return GamePrediction(
       example_id=example.example_id,
@@ -147,6 +180,8 @@ class StrengthDifferenceModel:
       metadata={
         "white_strength": white_strength,
         "black_strength": black_strength,
+        "white_estimated_elo": white_elo,
+        "black_estimated_elo": black_elo,
         "model": "strength_difference",
       },
     )
