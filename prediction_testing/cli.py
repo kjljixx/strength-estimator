@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     "accuracy": result.metric_report.accuracy,
     "log_loss": result.metric_report.log_loss,
   }
-  print(json.dumps(result), indent=2))
+  print(json.dumps(summary, indent=2))
   return 0
 
 
