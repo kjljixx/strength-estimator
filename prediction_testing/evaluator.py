@@ -52,7 +52,7 @@ def validate_probabilities(pred: GamePrediction) -> None:
 
 def accuracy(examples: Sequence[PredictionExample], preds: Sequence[GamePrediction]) -> float:
   correct = 0
-  for example, pred in zip(examples, preds, strict=True):
+  for example, pred in zip(examples, preds):
     if pred.predicted_result == example.prediction_game.result:
       correct += 1
   return correct / len(examples)
@@ -60,7 +60,7 @@ def accuracy(examples: Sequence[PredictionExample], preds: Sequence[GamePredicti
 
 def log_loss(examples: Sequence[PredictionExample], preds: Sequence[GamePrediction]) -> float:
   total = 0.0
-  for example, pred in zip(examples, preds, strict=True):
+  for example, pred in zip(examples, preds):
     probs = _pred_vector(pred)
     idx = RESULT_INDEX[example.prediction_game.result]
     total -= math.log(max(probs[idx], 1e-15))
@@ -69,10 +69,10 @@ def log_loss(examples: Sequence[PredictionExample], preds: Sequence[GamePredicti
 
 def brier_score(examples: Sequence[PredictionExample], preds: Sequence[GamePrediction]) -> float:
   total = 0.0
-  for example, pred in zip(examples, preds, strict=True):
+  for example, pred in zip(examples, preds):
     actual = _actual_vector(example.prediction_game.result)
     predicted = _pred_vector(pred)
-    total += sum((a - p) ** 2 for a, p in zip(actual, predicted, strict=True))
+    total += sum((a - p) ** 2 for a, p in zip(actual, predicted))
   return total / len(examples)
 
 
