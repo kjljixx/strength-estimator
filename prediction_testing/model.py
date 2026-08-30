@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
 from prediction_testing.schemas import (
@@ -104,35 +104,23 @@ class StrengthDifferenceModel:
 
   def __init__(
     self,
-    scorer: Callable[[str], float],
+    scorer: Callable[[str], Mapping[str, float]],
     sgf_loader: Callable[[str], str],
     *,
     across_games: str = "mean",
-    color_normalization: bool = True,
-    color_bias: float = 0.0,
-    strength_scale: float = 1.0,
     draw_rate: float = 0.04,
-    checkpoint_hash: str = "default",
   ):
     self.scorer = scorer
     self.sgf_loader = sgf_loader
     self.across_games = across_games
-    self.color_normalization = color_normalization
-    self.color_bias = color_bias
-    self.strength_scale = strength_scale
     self.draw_rate = draw_rate
-    self.checkpoint_hash = checkpoint_hash
-    self._cache: dict[str, float] = {}
 
   def validate(self) -> None:
     if not 0 <= self.draw_rate < 1:
       raise ValueError("draw_rate must be in [0, 1)")
 
-  def _score_game(self, game_id: str) -> float:
-    key = f"{self.checkpoint_hash}:{game_id}"
-    if key not in self._cache:
-      self._cache[key] = self.scorer(self.sgf_loader(game_id))
-    return self._cache[key]
+  def _score_game(self, game_id: str) -> Mapping[str, float]:
+    return self.scorer(self.sgf_loader(game_id))
 
   def _aggregate(self, values: Sequence[float]) -> float:
     if not values:
@@ -151,10 +139,7 @@ class StrengthDifferenceModel:
     ctx = example.white_context if side == "white" else example.black_context
     scores: list[float] = []
     for game in ctx.games:
-      score = self._score_game(game.game_id)
-      if self.color_normalization and game.target_color == "black":
-        score = -score
-      scores.append(score)
+      scores.append(self._score_game(game.game_id)[game.target_color])
     return self._aggregate(scores)
 
   def score_to_elo(self, score: float) -> float:
@@ -166,10 +151,9 @@ class StrengthDifferenceModel:
     white_elo = self.score_to_elo(white_strength)
     black_elo = self.score_to_elo(black_strength)
     white, draw, black, predicted = elo_to_probs(
-      self.strength_scale * white_elo,
-      self.strength_scale * black_elo,
+      white_elo,
+      black_elo,
       draw_rate=self.draw_rate,
-      color_bias=self.score_to_elo_slope * self.color_bias,
     )
     return GamePrediction(
       example_id=example.example_id,
@@ -187,9 +171,4 @@ class StrengthDifferenceModel:
     )
 
   def predict_batch(self, examples: Sequence[PredictionExample]) -> list[GamePrediction]:
-    predictions: list[GamePrediction] = []
-    for example in examples:
-      predictions.append(self.predict(example))
-    if len(predictions) != len(examples):
-      raise RuntimeError("model failure removed examples")
-    return predictions
+    return [self.predict(example) for example in examples]

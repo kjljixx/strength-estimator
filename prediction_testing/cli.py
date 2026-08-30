@@ -6,7 +6,7 @@ from pathlib import Path
 
 from prediction_testing.data_filter import PredictionDataFilter
 from prediction_testing.evaluator import PredictionEvaluator
-from prediction_testing.model import EloBaselineModel
+from prediction_testing.model import EloBaselineModel, StrengthDifferenceModel
 from prediction_testing.schemas import ContextPolicy, EvaluationConfig
 
 
@@ -14,6 +14,10 @@ def build_parser() -> argparse.ArgumentParser:
   parser = argparse.ArgumentParser(description="Run chess outcome prediction evaluation")
   parser.add_argument("game_paths", nargs="+", type=Path, help="SGF game files")
   parser.add_argument("--max-games-to-load", type=int, default=None)
+  parser.add_argument("--model", type=str, default="elo_baseline", choices=["elo_baseline", "strength_difference"])
+  parser.add_argument("--strength-config", type=Path)
+  parser.add_argument("--strength-checkpoint", type=Path)
+  parser.add_argument("--gpu-id", type=int, default=0)
   parser.add_argument("--output-dir", type=Path, default=Path("prediction_output"))
   parser.add_argument("--context-size", type=int, default=8)
   parser.add_argument("--exclude-same-day-context", action="store_true")
@@ -33,9 +37,24 @@ def main(argv: list[str] | None = None) -> int:
   print(f"Loaded {len(catalog.games)} games from {len(args.game_paths)} files")
   dataset = data_filter.build_examples(catalog, policy)
   print(f"Built {len(dataset.examples)} prediction examples with exclusions: {dataset.exclusion_counts}")
-  print(dataset.examples[:10].prediction_game)
+  print([example.prediction_game for example in dataset.examples[:10]])
 
-  model = EloBaselineModel()
+  if args.model == "elo_baseline":
+    model = EloBaselineModel()
+  else:
+    if args.strength_config is None or args.strength_checkpoint is None:
+      raise ValueError("--strength-config and --strength-checkpoint are required for strength_difference")
+    from build.chess import strength_py
+
+    scorer = strength_py.StrengthScorer(
+      str(args.strength_config),
+      str(args.strength_checkpoint),
+      args.gpu_id,
+    )
+    model = StrengthDifferenceModel(
+      scorer.score_sgf,
+      catalog.load_sgf_by_id,
+    )
   result = PredictionEvaluator().run(
     model,
     dataset,
