@@ -66,7 +66,7 @@ class ContextPolicy:
   min_context_age_seconds: int = 1
   allowed_events: tuple[str, ...] = ("Blitz",)
   min_elo: int = 1000
-  max_elo: int = 2600
+  max_elo: int = 3000
   require_both_ratings: bool = True
   exclude_same_day_context: bool = False
   require_distinct_context_games: bool = True
