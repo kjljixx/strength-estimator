@@ -45,7 +45,7 @@ def strength_to_probs(
 
 
 class EloBaselineModel:
-  def __init__(self, draw_rate: float = 0.1):
+  def __init__(self, draw_rate: float = 0.04):
     self.draw_rate = draw_rate
 
   def validate(self) -> None:
