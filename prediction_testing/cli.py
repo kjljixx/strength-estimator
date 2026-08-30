@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
   print(f"Loaded {len(catalog.games)} games from {len(args.game_paths)} files")
   dataset = data_filter.build_examples(catalog, policy)
   print(f"Built {len(dataset.examples)} prediction examples with exclusions: {dataset.exclusion_counts}")
-  print(dataset.examples[0].prediction_game)
+  print(dataset.examples[:10].prediction_game)
 
   model = EloBaselineModel()
   result = PredictionEvaluator().run(
