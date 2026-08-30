@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import mmap
 import re
 import warnings
 from collections import Counter, defaultdict
@@ -20,9 +21,9 @@ from prediction_testing.schemas import (
 )
 
 SGF_HEADER = re.compile(
-  r"\(;GM\[chess\]RE\[(-?\d+(?:\.\d+)?)\]EV\[([^\]]*)\]"
-  r"PW\[([^\]]*)\]PB\[([^\]]*)\]DT\[(\d{4}\.\d{2}\.\d{2})\]"
-  r"(?:WR\[(\d+)\])?(?:BR\[(\d+)\])?"
+  rb"\(;GM\[chess\]RE\[(-?\d+(?:\.\d+)?)\]EV\[([^\]]*)\]"
+  rb"PW\[([^\]]*)\]PB\[([^\]]*)\]DT\[(\d{4}\.\d{2}\.\d{2})\]"
+  rb"(?:WR\[(\d+)\])?(?:BR\[(\d+)\])?"
 )
 EXCLUSION_KEYS = (
   "unsupported_event",
@@ -39,7 +40,7 @@ EXCLUSION_KEYS = (
 )
 
 
-def parse_result(raw: str) -> GameResult | None:
+def parse_result(raw: str | bytes) -> GameResult | None:
   value = float(raw)
   if value > 0:
     return GameResult.WHITE_WIN
@@ -142,29 +143,33 @@ class GameCatalog:
 
   def index_paths(self, paths: Sequence[Path]) -> None:
     for path in paths:
-      text = path.read_text(encoding="utf-8", errors="replace")
-      for idx, match in enumerate(SGF_HEADER.finditer(text)):
-        result = parse_result(match.group(1))
-        if result is None:
-          continue
-        played_at = datetime.strptime(match.group(5), "%Y.%m.%d")
-        white_elo = int(match.group(6) or 0)
-        black_elo = int(match.group(7) or 0)
-        digest = hashlib.sha1(match.group(0).encode()).hexdigest()[:12]
-        game_id = f"{path.stem}:{digest}:{idx}"
-        self._games.append(
-          GameRecord(
-            game_id=game_id,
-            played_at=played_at,
-            white_player=match.group(3),
-            black_player=match.group(4),
-            white_elo=white_elo,
-            black_elo=black_elo,
-            result=result,
-            event=match.group(2) or "Blitz",
+      if path.stat().st_size == 0:
+        continue
+      with path.open("rb") as handle, mmap.mmap(
+        handle.fileno(), 0, access=mmap.ACCESS_READ,
+      ) as content:
+        for idx, match in enumerate(SGF_HEADER.finditer(content)):
+          result = parse_result(match.group(1))
+          if result is None:
+            continue
+          played_at = datetime.strptime(match.group(5).decode(), "%Y.%m.%d")
+          white_elo = int(match.group(6) or 0)
+          black_elo = int(match.group(7) or 0)
+          digest = hashlib.sha1(match.group(0)).hexdigest()[:12]
+          game_id = f"{path.stem}:{digest}:{idx}"
+          self._games.append(
+            GameRecord(
+              game_id=game_id,
+              played_at=played_at,
+              white_player=match.group(3).decode("utf-8", errors="replace"),
+              black_player=match.group(4).decode("utf-8", errors="replace"),
+              white_elo=white_elo,
+              black_elo=black_elo,
+              result=result,
+              event=match.group(2).decode("utf-8", errors="replace") or "Blitz",
+            )
           )
-        )
-        self._sgf_spans[game_id] = (path, match.start(), match.end())
+          self._sgf_spans[game_id] = (path, match.start(), match.end())
 
   @property
   def games(self) -> tuple[GameRecord, ...]:
@@ -179,9 +184,9 @@ class GameCatalog:
       self._sgf_cache[game_id] = inline
       return inline
     path, start, end = self._sgf_spans[game_id]
-    with path.open(encoding="utf-8", errors="replace") as handle:
+    with path.open("rb") as handle:
       handle.seek(start)
-      sgf = handle.read(end - start)
+      sgf = handle.read(end - start).decode("utf-8", errors="replace")
     self._sgf_cache[game_id] = sgf
     return sgf
 
