@@ -134,7 +134,7 @@ class PredictionEvaluator:
     ll = log_loss(examples, ordered)
     brier = brier_score(examples, ordered)
 
-    slices: dict[str, dict[str, float]] = {}
+    slices: dict[str, dict[str, tuple[float, int]]] = {}
     if config.report_by_elo:
       slices["elo_bucket"] = self._slice_metric(examples, ordered, config, _elo_bucket)
     if config.report_by_elo_difference:
@@ -162,17 +162,17 @@ class PredictionEvaluator:
     predictions: Sequence[GamePrediction],
     config: EvaluationConfig,
     key_fn,
-  ) -> dict[str, float]:
+  ) -> dict[str, tuple[float, int]]:
     groups: dict[str, list[int]] = defaultdict(list)
     for idx, example in enumerate(examples):
       groups[key_fn(example)].append(idx)
-    out: dict[str, float] = {}
+    out: dict[str, tuple[float, int]] = {}
     for key, indices in sorted(groups.items()):
       if len(indices) < config.minimum_slice_size:
         continue
       sub_examples = [examples[i] for i in indices]
       sub_preds = [predictions[i] for i in indices]
-      out[key] = log_loss(sub_examples, sub_preds)
+      out[key] = (accuracy(sub_examples, sub_preds), len(sub_examples))
     return out
 
 

@@ -130,7 +130,7 @@ class MetricReport:
   draw_rate: float
   log_loss: float
   brier_score: float
-  slices: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
+  slices: Mapping[str, Mapping[str, tuple[float, int]]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
