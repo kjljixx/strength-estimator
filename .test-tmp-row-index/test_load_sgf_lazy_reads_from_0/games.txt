@@ -1,0 +1,1 @@
+(;GM[chess]RE[1.0]EV[Blitz]PW[a]PB[b]DT[2024.01.01]WR[1500]BR[1500];B[e2e4])(;GM[chess]RE[-1.0]EV[Blitz]PW[c]PB[d]DT[2024.01.02]WR[1500]BR[1500];B[d2d4])

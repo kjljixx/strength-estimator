@@ -135,13 +135,14 @@ def make_selector() -> ContextSelector:
 class GameCatalog:
   def __init__(self) -> None:
     self._games: list[GameRecord] = []
-    self._sgf_spans: dict[str, tuple[Path, int, int]] = {}
-    self._inline_sgf: dict[str, str] = {}
-    self._sgf_cache: dict[str, str] = {}
+    self._sgf_spans: dict[int, tuple[Path, int, int]] = {}
+    self._inline_sgf: dict[int, str] = {}
+    self._sgf_cache: dict[int, str] = {}
 
   def add(self, game: GameRecord, sgf: str) -> None:
+    game_row_idx = len(self._games)
     self._games.append(game)
-    self._inline_sgf[game.game_id] = sgf
+    self._inline_sgf[game_row_idx] = sgf
 
   def index_paths(self, paths: Sequence[Path]) -> None:
     for path in tqdm(paths, desc="Loading catalog", unit="file"):
@@ -164,6 +165,7 @@ class GameCatalog:
               black_elo = int(match.group(7) or 0)
               digest = hashlib.sha1(match.group(0)).hexdigest()[:12]
               game_id = f"{path.stem}:{digest}:{idx}"
+              game_row_idx = len(self._games)
               self._games.append(
                 GameRecord(
                   game_id=game_id,
@@ -176,26 +178,35 @@ class GameCatalog:
                   event=match.group(2).decode("utf-8", errors="replace") or "Blitz",
                 )
               )
-              self._sgf_spans[game_id] = (path, match.start(), match.end())
+              self._sgf_spans[game_row_idx] = (path, match.start(), match.end())
             progress.update()
 
   @property
-  def games(self) -> tuple[GameRecord, ...]:
-    return tuple(sorted(self._games, key=lambda g: (g.played_at, g.game_id)))
+  def games(self) -> tuple[int, ...]:
+    return tuple(sorted(
+      range(len(self._games)),
+      key=lambda game_row_idx: (
+        self._games[game_row_idx].played_at,
+        self._games[game_row_idx].game_id,
+      ),
+    ))
 
-  def load_sgf(self, game_id: str) -> str:
-    cached = self._sgf_cache.get(game_id)
+  def load_game(self, game_row_idx: int) -> GameRecord:
+    return self._games[game_row_idx]
+
+  def load_sgf(self, game_row_idx: int) -> str:
+    cached = self._sgf_cache.get(game_row_idx)
     if cached is not None:
       return cached
-    inline = self._inline_sgf.get(game_id)
+    inline = self._inline_sgf.get(game_row_idx)
     if inline is not None:
-      self._sgf_cache[game_id] = inline
+      self._sgf_cache[game_row_idx] = inline
       return inline
-    path, start, end = self._sgf_spans[game_id]
+    path, start, end = self._sgf_spans[game_row_idx]
     with path.open("rb") as handle:
       handle.seek(start)
       sgf = handle.read(end - start).decode("utf-8", errors="replace")
-    self._sgf_cache[game_id] = sgf
+    self._sgf_cache[game_row_idx] = sgf
     return sgf
 
 
@@ -213,7 +224,7 @@ class PredictionDataFilter:
     catalog: GameCatalog,
     policy: ContextPolicy,
   ) -> FilteredPredictionDataset:
-    games = catalog.games
+    game_row_idxs = catalog.games
     selector = self._selector
     exclusions: Counter[str] = Counter({k: 0 for k in EXCLUSION_KEYS})
     seen_ids: set[str] = set()
@@ -221,12 +232,14 @@ class PredictionDataFilter:
     examples: list[PredictionExample] = []
     manifests: list[ExampleManifest] = []
 
-    by_player: dict[str, list[GameRecord]] = defaultdict(list)
-    for game in tqdm(games, desc="Indexing players", unit="game"):
-      by_player[game.white_player].append(game)
-      by_player[game.black_player].append(game)
+    by_player: dict[str, list[int]] = defaultdict(list)
+    for game_row_idx in tqdm(game_row_idxs, desc="Indexing players", unit="game"):
+      game = catalog.load_game(game_row_idx)
+      by_player[game.white_player].append(game_row_idx)
+      by_player[game.black_player].append(game_row_idx)
 
-    for game in tqdm(games, desc="Creating examples", unit="game"):
+    for game_row_idx in tqdm(game_row_idxs, desc="Creating examples", unit="game"):
+      game = catalog.load_game(game_row_idx)
       if game.game_id in seen_ids:
         exclusions["duplicate_game"] += 1
         continue
@@ -245,10 +258,10 @@ class PredictionDataFilter:
           continue
 
       white_eligible = self._eligible_context(
-        by_player[game.white_player], game, game.white_player, policy,
+        catalog, by_player[game.white_player], game, game.white_player, policy,
       )
       black_eligible = self._eligible_context(
-        by_player[game.black_player], game, game.black_player, policy,
+        catalog, by_player[game.black_player], game, game.black_player, policy,
       )
 
 
@@ -294,7 +307,8 @@ class PredictionDataFilter:
 
   def _eligible_context(
     self,
-    player_games: Sequence[GameRecord],
+    catalog: GameCatalog,
+    player_game_row_idxs: Sequence[int],
     prediction_game: GameRecord,
     player_id: str,
     policy: ContextPolicy,
@@ -306,7 +320,8 @@ class PredictionDataFilter:
       if policy.max_context_age_days is not None
       else None
     )
-    for game in player_games:
+    for game_row_idx in player_game_row_idxs:
+      game = catalog.load_game(game_row_idx)
       if game.game_id == prediction_game.game_id:
         continue
       if game.played_at >= prediction_game.played_at:

@@ -1,0 +1,12 @@
+{
+  "n_examples": 10,
+  "accuracy": 1.0,
+  "log_loss": 0.7985076962177715,
+  "brier_score": 0.5149999999999999,
+  "slices": {
+    "elo_bucket": {},
+    "elo_diff_bucket": {},
+    "month": {},
+    "context_size": {}
+  }
+}
