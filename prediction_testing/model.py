@@ -100,9 +100,13 @@ class StrengthDifferenceModel:
   # 4 0.257167
   # 5 0.389452
   # 6 0.453127
-  # 7 0.49278  
-  score_to_elo_slope = 2099.249546736356
-  score_to_elo_intercept = 1374.608727864828
+  # 7 0.49278
+  # 95k iters 200k unpolluted
+  # score_to_elo_slope = 2099.249546736356
+  # score_to_elo_intercept = 1374.608727864828
+
+  score_to_elo_slope = 357.702991
+  score_to_elo_intercept = 1941.294157
 
   def __init__(
     self,
