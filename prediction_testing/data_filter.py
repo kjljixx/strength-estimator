@@ -180,7 +180,7 @@ class GameCatalog:
                 )
               )
               self._sgf_spans.append((path, match.start(), match.end()))
-              if len(self._metadata) > max_games_to_load:
+              if max_games_to_load is not None and len(self._metadata) > max_games_to_load:
                 return
             progress.update()
 
