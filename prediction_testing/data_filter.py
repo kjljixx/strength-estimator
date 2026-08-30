@@ -16,6 +16,7 @@ from prediction_testing.schemas import (
   ContextPolicy,
   ExampleManifest,
   FilteredPredictionDataset,
+  GameMetadata,
   GameRecord,
   GameResult,
   PlayerContext,
@@ -51,7 +52,7 @@ def parse_result(raw: str | bytes) -> GameResult | None:
   return GameResult.DRAW
 
 
-def game_filter(game: GameRecord, policy: ContextPolicy) -> str | None:
+def game_filter(game: GameMetadata, policy: ContextPolicy) -> str | None:
   if game.event not in policy.allowed_events:
     return "unsupported_event"
   if policy.require_both_ratings and (game.white_elo <= 0 or game.black_elo <= 0):
@@ -65,7 +66,7 @@ def game_filter(game: GameRecord, policy: ContextPolicy) -> str | None:
 
 
 def target_perspective(
-  game: GameRecord,
+  game: GameMetadata,
   player_id: str,
 ) -> ContextGame | None:
   if player_id == game.white_player:
@@ -110,7 +111,7 @@ class ContextSelector(Protocol):
     eligible_games: Sequence[ContextGame],
     *,
     count: int,
-    prediction_game: GameRecord,
+    prediction_game: GameMetadata,
     seed: int,
   ) -> tuple[ContextGame, ...]: ...
 
@@ -121,7 +122,7 @@ class MostRecentSelector:
     eligible_games: Sequence[ContextGame],
     *,
     count: int,
-    prediction_game: GameRecord,
+    prediction_game: GameMetadata,
     seed: int,
   ) -> tuple[ContextGame, ...]:
     ordered = sorted(eligible_games, key=lambda g: (g.played_at, g.game_id))
@@ -134,14 +135,15 @@ def make_selector() -> ContextSelector:
 
 class GameCatalog:
   def __init__(self) -> None:
-    self._games: list[GameRecord] = []
-    self._sgf_spans: dict[int, tuple[Path, int, int]] = {}
+    self._metadata: list[GameMetadata] = []
+    self._sgf_spans: list[tuple[Path, int, int] | None] = []
     self._inline_sgf: dict[int, str] = {}
     self._sgf_cache: dict[int, str] = {}
 
   def add(self, game: GameRecord, sgf: str) -> None:
-    game_row_idx = len(self._games)
-    self._games.append(game)
+    game_row_idx = len(self._metadata)
+    self._metadata.append(self._metadata_from_game(game))
+    self._sgf_spans.append(None)
     self._inline_sgf[game_row_idx] = sgf
 
   def index_paths(self, paths: Sequence[Path]) -> None:
@@ -165,9 +167,9 @@ class GameCatalog:
               black_elo = int(match.group(7) or 0)
               digest = hashlib.sha1(match.group(0)).hexdigest()[:12]
               game_id = f"{path.stem}:{digest}:{idx}"
-              game_row_idx = len(self._games)
-              self._games.append(
-                GameRecord(
+              game_row_idx = len(self._metadata)
+              self._metadata.append(
+                GameMetadata(
                   game_id=game_id,
                   played_at=played_at,
                   white_player=match.group(3).decode("utf-8", errors="replace"),
@@ -178,21 +180,34 @@ class GameCatalog:
                   event=match.group(2).decode("utf-8", errors="replace") or "Blitz",
                 )
               )
-              self._sgf_spans[game_row_idx] = (path, match.start(), match.end())
+              self._sgf_spans.append((path, match.start(), match.end()))
             progress.update()
 
   @property
   def games(self) -> tuple[int, ...]:
     return tuple(sorted(
-      range(len(self._games)),
+      range(len(self._metadata)),
       key=lambda game_row_idx: (
-        self._games[game_row_idx].played_at,
-        self._games[game_row_idx].game_id,
+        self._metadata[game_row_idx].played_at,
+        self._metadata[game_row_idx].game_id,
       ),
     ))
 
+  def load_metadata(self, game_row_idx: int) -> GameMetadata:
+    return self._metadata[game_row_idx]
+
   def load_game(self, game_row_idx: int) -> GameRecord:
-    return self._games[game_row_idx]
+    metadata = self.load_metadata(game_row_idx)
+    return GameRecord(
+      game_id=metadata.game_id,
+      played_at=metadata.played_at,
+      white_player=metadata.white_player,
+      black_player=metadata.black_player,
+      white_elo=metadata.white_elo,
+      black_elo=metadata.black_elo,
+      result=metadata.result,
+      event=metadata.event,
+    )
 
   def load_sgf(self, game_row_idx: int) -> str:
     cached = self._sgf_cache.get(game_row_idx)
@@ -202,12 +217,28 @@ class GameCatalog:
     if inline is not None:
       self._sgf_cache[game_row_idx] = inline
       return inline
-    path, start, end = self._sgf_spans[game_row_idx]
+    span = self._sgf_spans[game_row_idx]
+    if span is None:
+      raise KeyError(f"no source span for game row {game_row_idx}")
+    path, start, end = span
     with path.open("rb") as handle:
       handle.seek(start)
       sgf = handle.read(end - start).decode("utf-8", errors="replace")
     self._sgf_cache[game_row_idx] = sgf
     return sgf
+
+  @staticmethod
+  def _metadata_from_game(game: GameRecord) -> GameMetadata:
+    return GameMetadata(
+      game_id=game.game_id,
+      played_at=game.played_at,
+      white_player=game.white_player,
+      black_player=game.black_player,
+      white_elo=game.white_elo,
+      black_elo=game.black_elo,
+      result=game.result,
+      event=game.event,
+    )
 
 
 class PredictionDataFilter:
@@ -234,12 +265,12 @@ class PredictionDataFilter:
 
     by_player: dict[str, list[int]] = defaultdict(list)
     for game_row_idx in tqdm(game_row_idxs, desc="Indexing players", unit="game"):
-      game = catalog.load_game(game_row_idx)
+      game = catalog.load_metadata(game_row_idx)
       by_player[game.white_player].append(game_row_idx)
       by_player[game.black_player].append(game_row_idx)
 
     for game_row_idx in tqdm(game_row_idxs, desc="Creating examples", unit="game"):
-      game = catalog.load_game(game_row_idx)
+      game = catalog.load_metadata(game_row_idx)
       if game.game_id in seen_ids:
         exclusions["duplicate_game"] += 1
         continue
@@ -282,7 +313,7 @@ class PredictionDataFilter:
       example_id = f"{game.game_id}@{game.played_at.isoformat()}"
       example = PredictionExample(
         example_id=example_id,
-        prediction_game=game,
+        prediction_game=catalog.load_game(game_row_idx),
         white_context=PlayerContext(game.white_player, white_ctx, game.played_at),
         black_context=PlayerContext(game.black_player, black_ctx, game.played_at),
       )
@@ -309,7 +340,7 @@ class PredictionDataFilter:
     self,
     catalog: GameCatalog,
     player_game_row_idxs: Sequence[int],
-    prediction_game: GameRecord,
+    prediction_game: GameMetadata,
     player_id: str,
     policy: ContextPolicy,
   ) -> list[ContextGame]:
@@ -321,7 +352,7 @@ class PredictionDataFilter:
       else None
     )
     for game_row_idx in player_game_row_idxs:
-      game = catalog.load_game(game_row_idx)
+      game = catalog.load_metadata(game_row_idx)
       if game.game_id == prediction_game.game_id:
         continue
       if game.played_at >= prediction_game.played_at:

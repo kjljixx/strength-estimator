@@ -24,6 +24,18 @@ class GameRecord:
   event: str = "Blitz"
 
 
+@dataclass(frozen=True, slots=True)
+class GameMetadata:
+  game_id: str
+  played_at: datetime
+  white_player: str
+  black_player: str
+  white_elo: int
+  black_elo: int
+  result: GameResult
+  event: str = "Blitz"
+
+
 @dataclass(frozen=True)
 class ContextGame:
   game_id: str
