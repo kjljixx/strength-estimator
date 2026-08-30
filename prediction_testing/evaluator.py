@@ -122,6 +122,7 @@ class PredictionEvaluator:
       raise ValueError(f"unknown predictions: {sorted(by_id)}")
 
     acc = accuracy(examples, ordered)
+    draw_rate = sum(1 for ex in examples if ex.prediction_game.result == GameResult.DRAW) / len(examples)
     ll = log_loss(examples, ordered)
     brier = brier_score(examples, ordered)
 
@@ -141,6 +142,7 @@ class PredictionEvaluator:
     return MetricReport(
       n_examples=len(examples),
       accuracy=acc,
+      draw_rate = draw_rate,
       log_loss=ll,
       brier_score=brier,
       slices=slices,

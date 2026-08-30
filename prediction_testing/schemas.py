@@ -127,6 +127,7 @@ class EvaluationConfig:
 class MetricReport:
   n_examples: int
   accuracy: float
+  draw_rate: float
   log_loss: float
   brier_score: float
   slices: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
