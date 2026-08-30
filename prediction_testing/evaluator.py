@@ -97,7 +97,7 @@ class PredictionEvaluator:
       "slices": report.slices,
       "sample_predictions": [{
           "example_id": pred.example_id,
-          "predicted_result": pred.predicted_result,
+          "predicted_result": pred.predicted_result.name,
           "white_win_probability": pred.white_win_probability,
           "draw_probability": pred.draw_probability,
           "black_win_probability": pred.black_win_probability,
