@@ -4,6 +4,8 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
+from tqdm import tqdm
+
 from prediction_testing.schemas import (
   GamePrediction,
   GameResult,
@@ -171,4 +173,7 @@ class StrengthDifferenceModel:
     )
 
   def predict_batch(self, examples: Sequence[PredictionExample]) -> list[GamePrediction]:
-    return [self.predict(example) for example in examples]
+    return [
+      self.predict(example)
+      for example in tqdm(examples, desc="Scoring predictions", unit="game")
+    ]
