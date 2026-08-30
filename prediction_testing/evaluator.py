@@ -91,9 +91,17 @@ class PredictionEvaluator:
     payload = {
       "n_examples": report.n_examples,
       "accuracy": report.accuracy,
+      "draw_rate": report.draw_rate,
       "log_loss": report.log_loss,
       "brier_score": report.brier_score,
       "slices": report.slices,
+      "sample_predictions": [{
+          "example_id": pred.example_id,
+          "predicted_result": pred.predicted_result,
+          "white_win_probability": pred.white_win_probability,
+          "draw_probability": pred.draw_probability,
+          "black_win_probability": pred.black_win_probability,
+        } for pred in predictions[:10]],
     }
     (output_dir / "metrics.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return EvaluationResult(

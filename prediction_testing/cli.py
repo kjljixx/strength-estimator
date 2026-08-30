@@ -13,6 +13,7 @@ from prediction_testing.schemas import ContextPolicy, EvaluationConfig
 def build_parser() -> argparse.ArgumentParser:
   parser = argparse.ArgumentParser(description="Run chess outcome prediction evaluation")
   parser.add_argument("game_paths", nargs="+", type=Path, help="SGF game files")
+  parser.add_argument("--max-games-to-load", type=int, default=None)
   parser.add_argument("--output-dir", type=Path, default=Path("prediction_output"))
   parser.add_argument("--context-size", type=int, default=8)
   parser.add_argument("--exclude-same-day-context", action="store_true")
@@ -28,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     seed=args.seed,
   )
   data_filter = PredictionDataFilter()
-  catalog = data_filter.load_catalog(args.game_paths)
+  catalog = data_filter.load_catalog(args.game_paths, args.max_games_to_load)
   print(f"Loaded {len(catalog.games)} games from {len(args.game_paths)} files")
   dataset = data_filter.build_examples(catalog, policy)
   print(f"Built {len(dataset.examples)} prediction examples with exclusions: {dataset.exclusion_counts}")
@@ -46,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     "accuracy": result.metric_report.accuracy,
     "log_loss": result.metric_report.log_loss,
   }
-  print(json.dumps(summary, indent=2))
+  print(json.dumps(result), indent=2))
   return 0
 
 

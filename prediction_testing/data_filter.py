@@ -146,7 +146,7 @@ class GameCatalog:
     self._sgf_spans.append(None)
     self._inline_sgf[game_row_idx] = sgf
 
-  def index_paths(self, paths: Sequence[Path]) -> None:
+  def index_paths(self, paths: Sequence[Path], max_games_to_load: int) -> None:
     for path in tqdm(paths, desc="Loading catalog", unit="file"):
       if path.stat().st_size == 0:
         continue
@@ -167,7 +167,6 @@ class GameCatalog:
               black_elo = int(match.group(7) or 0)
               digest = hashlib.sha1(match.group(0)).hexdigest()[:12]
               game_id = f"{path.stem}:{digest}:{idx}"
-              game_row_idx = len(self._metadata)
               self._metadata.append(
                 GameMetadata(
                   game_id=game_id,
@@ -181,6 +180,8 @@ class GameCatalog:
                 )
               )
               self._sgf_spans.append((path, match.start(), match.end()))
+              if len(self._metadata) > max_games_to_load:
+                return
             progress.update()
 
   @property
@@ -245,9 +246,9 @@ class PredictionDataFilter:
   def __init__(self, selector: ContextSelector | None = None):
     self._selector = selector or make_selector()
 
-  def load_catalog(self, paths: Sequence[Path]) -> GameCatalog:
+  def load_catalog(self, paths: Sequence[Path], max_games_to_load: int) -> GameCatalog:
     catalog = GameCatalog()
-    catalog.index_paths(paths)
+    catalog.index_paths(paths, max_games_to_load)
     return catalog
 
   def build_examples(
