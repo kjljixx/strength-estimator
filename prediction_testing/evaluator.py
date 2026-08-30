@@ -167,7 +167,7 @@ class PredictionEvaluator:
     for idx, example in enumerate(examples):
       groups[key_fn(example)].append(idx)
     out: dict[str, tuple[float, int]] = {}
-    for key, indices in sorted(groups.items()):
+    for key, indices in sorted(groups.items(), key=lambda x: (float(x[0].split("-")[0]), float(x[0].split("-")[1])) if "-" in x[0] else x):
       if len(indices) < config.minimum_slice_size:
         continue
       sub_examples = [examples[i] for i in indices]
