@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol, Sequence
 
+from tqdm import tqdm
+
 from prediction_testing.schemas import (
   ContextGame,
   ContextPolicy,
@@ -142,7 +144,7 @@ class GameCatalog:
     self._inline_sgf[game.game_id] = sgf
 
   def index_paths(self, paths: Sequence[Path]) -> None:
-    for path in paths:
+    for path in tqdm(paths, desc="Loading catalog", unit="file"):
       if path.stat().st_size == 0:
         continue
       with path.open("rb") as handle, mmap.mmap(
@@ -214,11 +216,11 @@ class PredictionDataFilter:
     manifests: list[ExampleManifest] = []
 
     by_player: dict[str, list[GameRecord]] = defaultdict(list)
-    for game in sorted(games, key=lambda g: (g.played_at, g.game_id)):
+    for game in tqdm(games, desc="Indexing players", unit="game"):
       by_player[game.white_player].append(game)
       by_player[game.black_player].append(game)
 
-    for game in sorted(games, key=lambda g: (g.played_at, g.game_id)):
+    for game in tqdm(games, desc="Creating examples", unit="game"):
       if game.game_id in seen_ids:
         exclusions["duplicate_game"] += 1
         continue
