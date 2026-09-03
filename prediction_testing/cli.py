@@ -20,15 +20,22 @@ def build_parser() -> argparse.ArgumentParser:
   parser.add_argument("--gpu-id", type=int, default=0)
   parser.add_argument("--output-dir", type=Path, default=Path("prediction_output"))
   parser.add_argument("--context-size", type=int, default=8)
+  parser.add_argument("--max-context-age-days", type=int)
   parser.add_argument("--exclude-same-day-context", action="store_true")
+  parser.add_argument("--context-last-n-moves", type=int)
   parser.add_argument("--seed", type=int, default=0)
   return parser
 
 
 def main(argv: list[str] | None = None) -> int:
   args = build_parser().parse_args(argv)
+  if args.max_context_age_days is not None and args.max_context_age_days < 0:
+    raise ValueError("--max-context-age-days must be non-negative")
+  if args.context_last_n_moves is not None and args.context_last_n_moves <= 0:
+    raise ValueError("--context-last-n-moves must be positive")
   policy = ContextPolicy(
     context_size=args.context_size,
+    max_context_age_days=args.max_context_age_days,
     exclude_same_day_context=args.exclude_same_day_context,
     seed=args.seed,
   )
@@ -54,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     model = StrengthDifferenceModel(
       scorer.score_sgf,
       catalog.load_sgf_by_id,
+      context_last_n_moves=args.context_last_n_moves,
     )
   result = PredictionEvaluator().run(
     model,

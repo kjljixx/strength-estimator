@@ -12,6 +12,7 @@ go_19x19_*/
 .sgf
 .txt
 .vscode
+.codex
 
 candidate_sgf_chess/
 query_sgf_chess/

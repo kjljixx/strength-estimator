@@ -11,6 +11,7 @@ from prediction_testing.schemas import (
   GameResult,
   PredictionExample,
 )
+from prediction_testing.sgf import keep_last_moves
 
 
 class GamePredictionModel(Protocol):
@@ -115,18 +116,25 @@ class StrengthDifferenceModel:
     *,
     across_games: str = "mean",
     draw_rate: float = 0.04,
+    context_last_n_moves: int | None = None,
   ):
     self.scorer = scorer
     self.sgf_loader = sgf_loader
     self.across_games = across_games
     self.draw_rate = draw_rate
+    self.context_last_n_moves = context_last_n_moves
 
   def validate(self) -> None:
     if not 0 <= self.draw_rate < 1:
       raise ValueError("draw_rate must be in [0, 1)")
+    if self.context_last_n_moves is not None and self.context_last_n_moves <= 0:
+      raise ValueError("context_last_n_moves must be positive")
 
   def _score_game(self, game_id: str) -> Mapping[str, float]:
-    return self.scorer(self.sgf_loader(game_id))
+    sgf = self.sgf_loader(game_id)
+    if self.context_last_n_moves is not None:
+      sgf = keep_last_moves(sgf, self.context_last_n_moves)
+    return self.scorer(sgf)
 
   def _aggregate(self, values: Sequence[float]) -> float:
     if not values:
