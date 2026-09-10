@@ -25,6 +25,11 @@ def build_parser() -> argparse.ArgumentParser:
   parser.add_argument("--exclude-same-day-context", action="store_true")
   parser.add_argument("--context-last-n-moves", type=int)
   parser.add_argument("--progressive", action="store_true")
+  parser.add_argument(
+    "--legacy",
+    action="store_true",
+    help="Use the strength-to-Elo calibration introduced in commit 170eeb5",
+  )
   parser.add_argument("--typical-moves-per-player-per-game", type=float, default=40)
   parser.add_argument("--current-move-weight", type=float, default=8)
   parser.add_argument("--seed", type=int, default=0)
@@ -72,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
       scorer.score_sgf,
       catalog.load_sgf_by_id,
       context_last_n_moves=args.context_last_n_moves,
+      legacy=args.legacy,
     )
   evaluator = PredictionEvaluator()
   if args.progressive:

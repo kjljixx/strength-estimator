@@ -95,20 +95,10 @@ class EloBaselineModel:
 
 
 class StrengthDifferenceModel:
-  # 0 -0.110919
-  # 1 -0.0404942
-  # 2 0.0264197
-  # 3 0.153585
-  # 4 0.257167
-  # 5 0.389452
-  # 6 0.453127
-  # 7 0.49278
-  # 95k iters 200k unpolluted
-  # score_to_elo_slope = 2099.249546736356
-  # score_to_elo_intercept = 1374.608727864828
-
-  score_to_elo_slope = 357.702991
-  score_to_elo_intercept = 1941.294157
+  default_score_to_elo_slope = 2099.249546736356
+  default_score_to_elo_intercept = 1374.608727864828
+  legacy_score_to_elo_slope = 357.702991
+  legacy_score_to_elo_intercept = 1941.294157
 
   def __init__(
     self,
@@ -118,12 +108,22 @@ class StrengthDifferenceModel:
     across_games: str = "mean",
     draw_rate: float = 0.04,
     context_last_n_moves: int | None = None,
+    legacy: bool = False,
   ):
     self.scorer = scorer
     self.sgf_loader = sgf_loader
     self.across_games = across_games
     self.draw_rate = draw_rate
     self.context_last_n_moves = context_last_n_moves
+    self.legacy = legacy
+    (
+      self.score_to_elo_slope,
+      self.score_to_elo_intercept,
+    ) = (
+      (self.legacy_score_to_elo_slope, self.legacy_score_to_elo_intercept)
+      if legacy
+      else (self.default_score_to_elo_slope, self.default_score_to_elo_intercept)
+    )
     self._game_score_cache: dict[str, Mapping[str, float]] = {}
 
   def validate(self) -> None:
@@ -185,6 +185,7 @@ class StrengthDifferenceModel:
       "white_estimated_elo": white_elo,
       "black_estimated_elo": black_elo,
       "model": "strength_difference",
+      "legacy_calibration": self.legacy,
     }
     if metadata:
       details.update(metadata)

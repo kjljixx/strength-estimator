@@ -46,6 +46,7 @@ CSV_FIELDS = (
   "black_current_game_fraction",
   "current_move_weight",
   "typical_moves_per_player_per_game",
+  "legacy_calibration",
 )
 
 
@@ -63,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
   parser.add_argument("--max-context-age-days", type=int)
   parser.add_argument("--exclude-same-day-context", action="store_true")
   parser.add_argument("--context-last-n-moves", type=int)
+  parser.add_argument(
+    "--legacy",
+    action="store_true",
+    help="Use the strength-to-Elo calibration introduced in commit 170eeb5",
+  )
   parser.add_argument("--typical-moves-per-player-per-game", type=float, default=40)
   parser.add_argument("--current-move-weight", type=float, default=8)
   parser.add_argument("--seed", type=int, default=0)
@@ -143,6 +149,7 @@ def trajectory_row(
     "black_current_game_fraction": optional(metadata, "black_current_game_fraction") or 0,
     "current_move_weight": args.current_move_weight,
     "typical_moves_per_player_per_game": args.typical_moves_per_player_per_game,
+    "legacy_calibration": metadata["legacy_calibration"],
   }
 
 
@@ -152,7 +159,8 @@ def main(argv: list[str] | None = None) -> int:
   print(
     "Export configuration: "
     f"context_size={args.context_size}, current_move_weight={args.current_move_weight}, "
-    f"typical_moves_per_player_per_game={args.typical_moves_per_player_per_game}"
+    f"typical_moves_per_player_per_game={args.typical_moves_per_player_per_game}, "
+    f"legacy_calibration={args.legacy}"
   )
 
   data_filter = PredictionDataFilter()
@@ -174,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
     scorer.score_sgf,
     catalog.load_sgf_by_id,
     context_last_n_moves=args.context_last_n_moves,
+    legacy=args.legacy,
   )
 
   rows: list[dict[str, object]] = []
