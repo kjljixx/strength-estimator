@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
+from tqdm import tqdm
+
 from prediction_testing.model import GamePredictionModel
 from prediction_testing.schemas import (
   EvaluationConfig,
@@ -15,6 +17,8 @@ from prediction_testing.schemas import (
   GamePrediction,
   GameResult,
   MetricReport,
+  ProgressiveEvaluationResult,
+  ProgressivePrediction,
   PredictionExample,
 )
 
@@ -77,6 +81,87 @@ def brier_score(examples: Sequence[PredictionExample], preds: Sequence[GamePredi
 
 
 class PredictionEvaluator:
+  def run_progressive(
+    self,
+    model: GamePredictionModel,
+    dataset: FilteredPredictionDataset,
+    config: EvaluationConfig,
+    output_dir: Path,
+    *,
+    typical_moves_per_player_per_game: float,
+    current_move_weight: float,
+  ) -> ProgressiveEvaluationResult:
+    model.validate()
+    if not hasattr(model, "predict_progressive"):
+      raise TypeError(f"{type(model).__name__} does not support progressive predictions")
+
+    trajectories: list[ProgressivePrediction] = []
+    for example in tqdm(dataset.examples, desc="Scoring prediction trajectories", unit="game"):
+      trajectories.extend(model.predict_progressive(
+        example,
+        typical_moves_per_player_per_game=typical_moves_per_player_per_game,
+        current_move_weight=current_move_weight,
+      ))
+
+    examples_by_id = {example.example_id: example for example in dataset.examples}
+    baseline_by_id = {
+      trajectory.example_id: trajectory.prediction
+      for trajectory in trajectories
+      if trajectory.observed_plies == 0
+    }
+    by_ply: dict[int, list[ProgressivePrediction]] = defaultdict(list)
+    for trajectory in trajectories:
+      by_ply[trajectory.observed_plies].append(trajectory)
+
+    metrics_by_ply: dict[str, dict[str, object]] = {}
+    for ply, rows in sorted(by_ply.items()):
+      examples = [examples_by_id[row.example_id] for row in rows]
+      progressive = [row.prediction for row in rows]
+      baseline = [baseline_by_id[row.example_id] for row in rows]
+      metrics_by_ply[str(ply)] = {
+        "n_examples": len(rows),
+        "progressive": self._metric_payload(self.score(examples, progressive, config)),
+        "context_only": self._metric_payload(self.score(examples, baseline, config)),
+      }
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with (output_dir / "predictions.jsonl").open("w", encoding="utf-8") as stream:
+      for row in trajectories:
+        prediction = row.prediction
+        stream.write(json.dumps({
+          "example_id": row.example_id,
+          "observed_plies": row.observed_plies,
+          "is_recorded_endpoint": row.is_recorded_endpoint,
+          "predicted_result": prediction.predicted_result.name,
+          "white_win_probability": prediction.white_win_probability,
+          "draw_probability": prediction.draw_probability,
+          "black_win_probability": prediction.black_win_probability,
+          "metadata": prediction.metadata,
+        }) + "\n")
+    payload = {
+      "typical_moves_per_player_per_game": typical_moves_per_player_per_game,
+      "current_move_weight": current_move_weight,
+      "metrics_by_ply": metrics_by_ply,
+    }
+    (output_dir / "metrics_by_ply.json").write_text(
+      json.dumps(payload, indent=2),
+      encoding="utf-8",
+    )
+    return ProgressiveEvaluationResult(
+      model_name=type(model).__name__,
+      predictions=tuple(trajectories),
+      metrics_by_ply=metrics_by_ply,
+    )
+
+  @staticmethod
+  def _metric_payload(report: MetricReport) -> dict[str, object]:
+    return {
+      "accuracy": report.accuracy,
+      "draw_rate": report.draw_rate,
+      "log_loss": report.log_loss,
+      "brier_score": report.brier_score,
+    }
+
   def run(
     self,
     model: GamePredictionModel,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from prediction_testing.data_filter import PredictionDataFilter
@@ -23,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
   parser.add_argument("--max-context-age-days", type=int)
   parser.add_argument("--exclude-same-day-context", action="store_true")
   parser.add_argument("--context-last-n-moves", type=int)
+  parser.add_argument("--progressive", action="store_true")
+  parser.add_argument("--typical-moves-per-player-per-game", type=float, default=40)
+  parser.add_argument("--current-move-weight", type=float, default=8)
   parser.add_argument("--seed", type=int, default=0)
   return parser
 
@@ -33,6 +37,12 @@ def main(argv: list[str] | None = None) -> int:
     raise ValueError("--max-context-age-days must be non-negative")
   if args.context_last_n_moves is not None and args.context_last_n_moves <= 0:
     raise ValueError("--context-last-n-moves must be positive")
+  if args.typical_moves_per_player_per_game <= 0:
+    raise ValueError("--typical-moves-per-player-per-game must be positive")
+  if not math.isfinite(args.current_move_weight) or args.current_move_weight < 0:
+    raise ValueError("--current-move-weight must be finite and non-negative")
+  if args.progressive and args.model != "strength_difference":
+    raise ValueError("--progressive requires --model strength_difference")
   policy = ContextPolicy(
     context_size=args.context_size,
     max_context_age_days=args.max_context_age_days,
@@ -63,12 +73,27 @@ def main(argv: list[str] | None = None) -> int:
       catalog.load_sgf_by_id,
       context_last_n_moves=args.context_last_n_moves,
     )
-  result = PredictionEvaluator().run(
-    model,
-    dataset,
-    EvaluationConfig(),
-    args.output_dir,
-  )
+  evaluator = PredictionEvaluator()
+  if args.progressive:
+    result = evaluator.run_progressive(
+      model,
+      dataset,
+      EvaluationConfig(),
+      args.output_dir,
+      typical_moves_per_player_per_game=args.typical_moves_per_player_per_game,
+      current_move_weight=args.current_move_weight,
+    )
+    ply_zero = result.metrics_by_ply["0"]["progressive"]
+    summary = {
+      "accepted_examples": len(dataset.examples),
+      "trajectory_predictions": len(result.predictions),
+      "ply_zero_accuracy": ply_zero["accuracy"],
+      "ply_zero_log_loss": ply_zero["log_loss"],
+    }
+    print(json.dumps(summary, indent=2))
+    return 0
+
+  result = evaluator.run(model, dataset, EvaluationConfig(), args.output_dir)
   summary = {
     "accepted_examples": len(dataset.examples),
     "accuracy": result.metric_report.accuracy,

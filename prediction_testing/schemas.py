@@ -138,3 +138,18 @@ class EvaluationResult:
   model_name: str
   metric_report: MetricReport
   predictions: tuple[GamePrediction, ...]
+
+
+@dataclass(frozen=True)
+class ProgressivePrediction:
+  example_id: str
+  observed_plies: int
+  is_recorded_endpoint: bool
+  prediction: GamePrediction
+
+
+@dataclass(frozen=True)
+class ProgressiveEvaluationResult:
+  model_name: str
+  predictions: tuple[ProgressivePrediction, ...]
+  metrics_by_ply: Mapping[str, Mapping[str, Any]]
