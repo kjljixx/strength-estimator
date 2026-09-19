@@ -1,0 +1,2 @@
+player,matched_games,analyzed_games,skipped_games,moves,mean_score,estimated_elo,estimate_status,nearest_bucket
+olgaastafjeva,1008,978,30,37127,-0.32041740173558275,1100.0,below_range,1000-1200

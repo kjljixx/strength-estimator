@@ -1,0 +1,2 @@
+player,matched_games,analyzed_games,skipped_games,moves,mean_score,median_recorded_rating,estimated_elo,estimate_status,nearest_bucket
+Gillou11,1008,1007,1,27120,-2.1017709283317525,1415.0,1166.7685582716986,interpolated,1000-1200

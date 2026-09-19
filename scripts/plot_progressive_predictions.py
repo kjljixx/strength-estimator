@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -13,6 +14,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from prediction_testing.model import StrengthDifferenceModel
+
 
 REQUIRED_COLUMNS = {
   "example_id",
@@ -20,6 +25,10 @@ REQUIRED_COLUMNS = {
   "game_progress",
   "winner_elo_difference",
   "context_only_winner_elo_difference",
+  "white_current_strength",
+  "black_current_strength",
+  "winner_color",
+  "legacy_calibration",
 }
 
 
@@ -60,7 +69,21 @@ def comparison_data(data: pd.DataFrame) -> pd.DataFrame:
     columns={"context_only_winner_elo_difference": "predicted_elo_difference"},
   )
   context["estimate"] = "Context only"
-  return pd.concat([progressive, context], ignore_index=True)
+  current = data[["example_id", "observed_plies", "game_progress"]].copy()
+  slopes = data["legacy_calibration"].map({
+    False: StrengthDifferenceModel.default_score_to_elo_slope,
+    True: StrengthDifferenceModel.legacy_score_to_elo_slope,
+  })
+  direction = data["winner_color"].map({"white": 1, "black": -1})
+  if slopes.isna().any() or direction.isna().any():
+    raise ValueError("Invalid legacy_calibration or winner_color in CSV")
+  current["predicted_elo_difference"] = (
+    (data["white_current_strength"] - data["black_current_strength"])
+    * slopes * direction
+  )
+  current["estimate"] = "Current game only"
+  current = current.dropna(subset=["predicted_elo_difference"])
+  return pd.concat([progressive, context, current], ignore_index=True)
 
 
 def plot_by_ply(data: pd.DataFrame, output_dir: Path, dpi: int) -> None:

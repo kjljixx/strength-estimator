@@ -1,0 +1,2 @@
+player,matched_games,analyzed_games,skipped_games,moves,mean_score,median_recorded_rating,estimated_elo,estimate_status,nearest_bucket
+pravan_sanghvi,1008,981,27,19541,-0.18751201363182046,1217.0,1100.0,below_range,1000-1200

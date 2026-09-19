@@ -1,0 +1,2 @@
+player,matched_games,analyzed_games,skipped_games,moves,mean_score,median_recorded_rating,estimated_elo,estimate_status,nearest_bucket
+Robsd,1008,1007,1,29491,-2.1765225284589125,1254.0,1132.5753647185556,interpolated,1000-1200

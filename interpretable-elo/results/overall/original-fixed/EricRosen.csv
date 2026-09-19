@@ -1,0 +1,2 @@
+player,matched_games,analyzed_games,skipped_games,moves,mean_score,median_recorded_rating,estimated_elo,estimate_status,nearest_bucket
+EricRosen,1008,987,21,36544,0.5882712216434987,2600.5,2058.4201864687257,interpolated,2000-2200
