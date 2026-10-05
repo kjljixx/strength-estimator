@@ -95,6 +95,7 @@ public:
   inline std::shared_ptr<StDataLoaderSharedData> getSharedData() { return std::static_pointer_cast<StDataLoaderSharedData>(shared_data_); }
 
 private:
+  bool phase_examples_built_ = false;
   void allocateBTGamePositions();
   void allocateBTWinChainPositions();
   void buildPhaseExamples();

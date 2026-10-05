@@ -360,7 +360,6 @@ void StDataLoader::loadDataFromFile(const std::string& file_name)
   int label = 0;
   getSharedData()->rank_label_map_.clear();
   for (auto& m : getSharedData()->env_loaders_map_) { getSharedData()->rank_label_map_[m.first] = label++; }
-  if (strength::bt_use_phase_examples) { buildPhaseExamples(); }
 }
 
 void StDataLoader::buildPhaseExamples()
@@ -506,7 +505,13 @@ void StDataLoader::loadWinChainsFromFile(const std::string& file_name)
 
 void StDataLoader::sampleData()
 {
-  if (config::nn_type_name == "bt") { allocateBTGamePositions(); }
+  if (config::nn_type_name == "bt") {
+    if (strength::bt_use_phase_examples && !phase_examples_built_) {
+      buildPhaseExamples();
+      phase_examples_built_ = true;
+    }
+    allocateBTGamePositions();
+  }
   DataLoader::sampleData();
 }
 
