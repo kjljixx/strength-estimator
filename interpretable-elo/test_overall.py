@@ -33,6 +33,19 @@ class OverallTest(unittest.TestCase):
     self.assertEqual(result["nearest_bucket"], "1000-1200")
     self.assertEqual(result["estimate_status"], "interpolated")
 
+  def test_estimate_elo_extrapolates_both_ends(self):
+    calibration = [
+      {"low": 1000, "high": 1200, "center": 1100, "mean_score": -1.0},
+      {"low": 1200, "high": 1400, "center": 1300, "mean_score": 1.0},
+      {"low": 1400, "high": 1600, "center": 1500, "mean_score": 2.0},
+    ]
+    below = overall.estimate_elo(-2.0, calibration)
+    above = overall.estimate_elo(3.0, calibration)
+    self.assertEqual((below["estimated_elo"], below["estimate_status"]),
+                     (1000, "extrapolated_below"))
+    self.assertEqual((above["estimated_elo"], above["estimate_status"]),
+                     (1700, "extrapolated_above"))
+
   def test_scores_named_side_from_sgf_file(self):
     class Scorer:
       def score_sgf(self, _sgf):

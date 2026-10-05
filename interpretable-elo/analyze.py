@@ -15,12 +15,60 @@ import chess
 import chess.pgn
 
 
-def phase_for(fullmove: int, early_end: int, mid_end: int) -> str:
-  if fullmove <= early_end:
-    return "early"
-  if fullmove <= mid_end:
+PHASES = ("opening", "midgame", "endgame")
+
+
+def mixedness(board: chess.Board) -> int:
+  def score(rank: int, white: int, black: int) -> int:
+    if white == 0:
+      return {1: 1 + rank, 2: max(0, 8 - rank) if rank < 6 else 0,
+              3: 10 - rank if rank < 7 else 0,
+              4: 10 - rank if rank < 7 else 0}.get(black, 0)
+    if white == 1:
+      return {0: 9 - rank, 1: 5 + abs(4 - rank), 2: 11 - rank,
+              3: 12 - rank}.get(black, 0)
+    if white == 2:
+      return {0: rank if rank > 2 else 0, 1: rank + 3,
+              2: 7}.get(black, 0)
+    if white == 3:
+      return {0: rank + 2 if rank > 1 else 0,
+              1: rank + 4}.get(black, 0)
+    if white == 4 and black == 0:
+      return rank + 2 if rank > 1 else 0
+    return 0
+
+  total = 0
+  for rank in range(1, 8):
+    for file in range(7):
+      region = sum(1 << chess.square(file + x, rank - 1 + y)
+                   for x in range(2) for y in range(2))
+      total += score(rank, chess.popcount(board.occupied_co[chess.WHITE] & region),
+                     chess.popcount(board.occupied_co[chess.BLACK] & region))
+  return total
+
+
+def phase_boundaries(boards: list[chess.Board]) -> tuple[int | None, int | None]:
+  def piece_count(board: chess.Board) -> int:
+    return chess.popcount(board.occupied & ~(board.kings | board.pawns))
+
+  middle = next((index for index, board in enumerate(boards)
+                 if piece_count(board) <= 10
+                 or chess.popcount(board.occupied_co[chess.WHITE] & chess.BB_RANK_1) < 4
+                 or chess.popcount(board.occupied_co[chess.BLACK] & chess.BB_RANK_8) < 4
+                 or mixedness(board) > 150), None)
+  end = next((index for index, board in enumerate(boards)
+              if piece_count(board) <= 6), None) if middle is not None else None
+  if middle == end:
+    middle = None
+  return middle, end
+
+
+def phase_for(ply_index: int, middle: int | None, end: int | None) -> str:
+  if end is not None and ply_index >= end:
+    return "endgame"
+  if middle is not None and ply_index >= middle:
     return "midgame"
-  return "endgame"
+  return "opening"
 
 
 def instantaneous_score(average: float, previous_average: float, move_count: int) -> float:
@@ -43,6 +91,7 @@ def game_to_sgf(game: chess.pgn.Game) -> tuple[str, list[dict[str, object]]]:
 
   moves: list[str] = []
   positions: list[dict[str, object]] = []
+  boards: list[chess.Board] = []
   for ply, move in enumerate(game.mainline_moves(), start=1):
     positions.append({
       "ply": ply,
@@ -53,6 +102,11 @@ def game_to_sgf(game: chess.pgn.Game) -> tuple[str, list[dict[str, object]]]:
     })
     moves.append(f";{'B' if board.turn == chess.WHITE else 'W'}[{engine_move_uci(board, move)}]")
     board.push(move)
+    boards.append(board.copy(stack=False))
+
+  middle, end = phase_boundaries(boards)
+  for index, position in enumerate(positions):
+    position["phase"] = phase_for(index, middle, end)
 
   result = {"1-0": "1.0", "0-1": "-1.0"}.get(game.headers.get("Result"), "0.0")
   root = (
@@ -108,13 +162,11 @@ def read_games(path: Path):
 def write_outputs(
   rows: list[dict[str, object]],
   output_dir: Path,
-  early_end: int,
-  mid_end: int,
 ) -> None:
   position_groups: dict[str, list[float]] = defaultdict(list)
   phase_groups: dict[str, list[float]] = defaultdict(list)
   for row in rows:
-    phase = phase_for(int(row["fullmove"]), early_end, mid_end)
+    phase = str(row["phase"])
     key = f"{row['fen_before']} | {row['move_uci']}"
     position_groups[key].append(float(row["strength"]))
     phase_groups[phase].append(float(row["strength"]))
@@ -131,7 +183,7 @@ def write_outputs(
   with (output_dir / "phases.csv").open("w", newline="", encoding="utf-8") as stream:
     writer = csv.DictWriter(stream, fieldnames=("phase", "average_strength", "move_count"))
     writer.writeheader()
-    for phase in ("early", "midgame", "endgame"):
+    for phase in PHASES:
       scores = phase_groups[phase]
       writer.writerow({
         "phase": phase,
@@ -148,19 +200,15 @@ def build_parser() -> argparse.ArgumentParser:
   parser.add_argument("--checkpoint", type=Path, required=True)
   parser.add_argument("--output-dir", type=Path, default=Path("interpretable-elo-output"))
   parser.add_argument("--gpu-id", type=int, default=0)
-  parser.add_argument("--early-end", type=int, default=10)
-  parser.add_argument("--mid-end", type=int, default=30)
   return parser
 
 
 def main() -> int:
   args = build_parser().parse_args()
-  if args.early_end < 1 or args.mid_end <= args.early_end:
-    raise ValueError("phase bounds require 1 <= early-end < mid-end")
   paths = sorted(args.pgn_dir.rglob("*.pgn"))
   print(
     f"Config: pgn_files={len(paths)}, player={args.player!r}, gpu_id={args.gpu_id}, "
-    f"early_end={args.early_end}, mid_end={args.mid_end}"
+    f"phase_divider=lichess"
   )
 
   sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -184,7 +232,7 @@ def main() -> int:
         skipped += 1
         print(f"Skip {path}:{game_index}: {error}", file=sys.stderr)
 
-  write_outputs(rows, args.output_dir, args.early_end, args.mid_end)
+  write_outputs(rows, args.output_dir)
   print(
     f"Done: matched_games={matched}, skipped_games={skipped}, scored_moves={len(rows)}, "
     f"unique_positions={len({(row['fen_before'], row['move_uci']) for row in rows})}, "

@@ -1,1 +1,2 @@
 python-chess>=1.11
+seaborn>=0.13

@@ -164,25 +164,28 @@ def build_calibration(scorer, candidate_dir: Path) -> list[dict[str, float | int
 
 
 def estimate_elo(score: float, calibration: list[dict[str, float | int]]) -> dict[str, object]:
+  if len(calibration) < 2:
+    raise ValueError("Elo conversion requires at least two calibration buckets")
   nearest = min(calibration, key=lambda row: abs(score - float(row["mean_score"])))
   ordered = sorted(calibration, key=lambda row: float(row["mean_score"]))
-  if score <= float(ordered[0]["mean_score"]):
-    estimated = float(ordered[0]["center"])
-    status = "below_range"
-  elif score >= float(ordered[-1]["mean_score"]):
-    estimated = float(ordered[-1]["center"])
-    status = "above_range"
+  if score < float(ordered[0]["mean_score"]):
+    lower, upper = ordered[:2]
+    status = "extrapolated_below"
+  elif score > float(ordered[-1]["mean_score"]):
+    lower, upper = ordered[-2:]
+    status = "extrapolated_above"
   else:
     status = "interpolated"
-    for lower, upper in zip(ordered, ordered[1:]):
-      lower_score = float(lower["mean_score"])
-      upper_score = float(upper["mean_score"])
-      if lower_score <= score <= upper_score:
-        fraction = (score - lower_score) / (upper_score - lower_score)
-        estimated = float(lower["center"]) + fraction * (
-          float(upper["center"]) - float(lower["center"])
-        )
-        break
+    lower, upper = next((left, right) for left, right in zip(ordered, ordered[1:])
+                        if float(left["mean_score"]) <= score <= float(right["mean_score"]))
+  lower_score = float(lower["mean_score"])
+  upper_score = float(upper["mean_score"])
+  if lower_score == upper_score:
+    raise ValueError("adjacent calibration buckets have identical mean scores")
+  fraction = (score - lower_score) / (upper_score - lower_score)
+  estimated = float(lower["center"]) + fraction * (
+    float(upper["center"]) - float(lower["center"])
+  )
   return {
     "estimated_elo": estimated,
     "estimate_status": status,
