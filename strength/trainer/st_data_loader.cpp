@@ -103,8 +103,6 @@ std::string parsePhaseRanges(const std::string& root, int num_moves, std::vector
 
 } // namespace
 
-} // namespace
-
 bool StDataLoaderThread::addEnvironmentLoader()
 {
   std::string env_string = getSharedData()->getNextEnvString();
