@@ -110,6 +110,9 @@ To reproduce the strength estimator models of $\texttt{SE}$, $\texttt{SE}_{\inft
 ./scripts/train.sh go cfg/se_go.cfg                 # Train SE
 ./scripts/train.sh go cfg/se_infty_go.cfg           # Train SE_∞
 
+# For Chain
+./scripts/train.sh chess cfg/se_chess_chain.cfg -g 0
+
 # For chess
 ./scripts/train.sh chess cfg/sl_chess.cfg           # Train SL
 ./scripts/train.sh chess cfg/se_chess.cfg           # Train SE
