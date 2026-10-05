@@ -3,6 +3,7 @@ import hashlib
 import os
 import random
 import re
+import shutil
 import sys
 from collections import Counter
 from multiprocessing import Pool
@@ -28,6 +29,7 @@ def build_parser():
   parser.add_argument("--elo-interval", type=int, default=200)
   parser.add_argument("--compare-interval", type=int, default=200, help="interval used only to report how many games narrower bins exclude")
   parser.add_argument("--eval-per-bin", type=int, default=2200)
+  parser.add_argument("--max-train-per-bin", type=int, default=0, help="randomly keep at most this many training games per bin (0 keeps all)")
   parser.add_argument("--seed", type=int, default=0)
   parser.add_argument("--phase-examples", action="store_true", help="add PM[]/PE[] midgame/endgame start move indices (-1 if absent) to training games")
   parser.add_argument("--workers", type=int, default=os.cpu_count())
@@ -119,6 +121,8 @@ def scan_input(input_file, args, held_out, rng):
   stats = Counter()
   seen_per_rank = [0] * rank_count
   evaluation_samples = [[] for _ in range(rank_count)]
+  training_samples = [[] for _ in range(rank_count)]
+  training_capacity = args.max_train_per_bin + args.eval_per_bin
   with open(input_file, "r", encoding="utf-8") as stream:
     for line_number, line in enumerate(tqdm(stream, desc=f"scan {input_file.name}"), start=1):
       stats["games"] += 1
@@ -128,9 +132,19 @@ def scan_input(input_file, args, held_out, rng):
         continue
       seen_per_rank[rank] += 1
       reservoir_add(evaluation_samples[rank], line_number, seen_per_rank[rank], args.eval_per_bin, rng)
+      if args.max_train_per_bin:
+        reservoir_add(training_samples[rank], line_number, seen_per_rank[rank], training_capacity, rng)
   with open(input_file, "r", encoding="utf-8") as stream:
     stats["kept_at_compare_interval"] = sum(compare_interval_keeps(line, args) for line in tqdm(stream, desc="compare interval"))
-  return stats, seen_per_rank, [set(sample) for sample in evaluation_samples]
+  evaluation_lines = [set(sample) for sample in evaluation_samples]
+  training_lines = None
+  if args.max_train_per_bin:
+    training_lines = []
+    for rank in range(rank_count):
+      candidates = [number for number in training_samples[rank] if number not in evaluation_lines[rank]]
+      rng.shuffle(candidates)
+      training_lines.append(set(candidates[:args.max_train_per_bin]))
+  return stats, seen_per_rank, evaluation_lines, training_lines
 
 
 def bin_directory(args, split, rank):
@@ -138,15 +152,18 @@ def bin_directory(args, split, rank):
   return Path(args.output_root) / split / f"sgf_{low}_{low + args.elo_interval}"
 
 
-def route_tasks(input_file, args, held_out, evaluation_lines):
+def route_tasks(input_file, args, held_out, evaluation_lines, training_lines):
   with open(input_file, "r", encoding="utf-8") as stream:
     for line_number, line in enumerate(stream, start=1):
       rank, _ = classify(line, args, held_out)
-      if rank is not None:
-        yield rank, line_number in evaluation_lines[rank], line, args.phase_examples
+      if rank is None:
+        continue
+      is_evaluation = line_number in evaluation_lines[rank]
+      if is_evaluation or training_lines is None or line_number in training_lines[rank]:
+        yield rank, is_evaluation, line, args.phase_examples
 
 
-def write_outputs(input_file, args, held_out, evaluation_lines):
+def write_outputs(input_file, args, held_out, evaluation_lines, training_lines):
   rank_count = len(evaluation_lines)
   outputs = {}
   for rank in range(rank_count):
@@ -158,7 +175,7 @@ def write_outputs(input_file, args, held_out, evaluation_lines):
   written = Counter()
   skipped = Counter()
   phase_games = [Counter() for _ in range(rank_count)]
-  tasks = route_tasks(input_file, args, held_out, evaluation_lines)
+  tasks = route_tasks(input_file, args, held_out, evaluation_lines, training_lines)
   pool = Pool(args.workers) if args.phase_examples and args.workers > 1 else None
   results = pool.imap(process_task, tasks, chunksize=1000) if pool else map(process_task, tasks)
   try:
@@ -190,17 +207,31 @@ def report(stats, seen_per_rank, args):
     print(f"bin {low}-{low + args.elo_interval - 1}: eligible games={count}")
 
 
+def check_free_disk(input_file, stats, seen_per_rank, args):
+  games = sum(seen_per_rank)
+  kept = sum(min(count, args.max_train_per_bin) if args.max_train_per_bin else count for count in seen_per_rank)
+  kept += min(games, args.eval_per_bin * len(seen_per_rank))
+  average_bytes = input_file.stat().st_size / stats["games"]
+  needed = 2 * kept * average_bytes
+  Path(args.output_root).mkdir(parents=True, exist_ok=True)
+  free = shutil.disk_usage(args.output_root).free
+  print(f"estimated output (split + merged copies)={needed / 1e9:.1f} GB, free disk={free / 1e9:.1f} GB")
+  if needed * 1.2 > free:
+    sys.exit("ERROR: not enough free disk; lower --max-train-per-bin or free space")
+
+
 def process_file(input_file, args, held_out):
   rng = random.Random(f"{args.seed}:{input_file.name}")
   print(f"------start {input_file.name}------")
-  stats, seen_per_rank, evaluation_lines = scan_input(input_file, args, held_out, rng)
+  stats, seen_per_rank, evaluation_lines, training_lines = scan_input(input_file, args, held_out, rng)
   report(stats, seen_per_rank, args)
   empty_bins = [rank for rank, count in enumerate(seen_per_rank) if count <= args.eval_per_bin]
   if empty_bins:
     print(f"WARNING: bins with eligible games <= eval-per-bin (no training games left): {empty_bins}")
   if args.stats_only:
     return
-  written, skipped, phase_games = write_outputs(input_file, args, held_out, evaluation_lines)
+  check_free_disk(input_file, stats, seen_per_rank, args)
+  written, skipped, phase_games = write_outputs(input_file, args, held_out, evaluation_lines, training_lines)
   for rank, counter in enumerate(phase_games):
     print(f"bin {rank}: train={written[(rank, False)]} eval={written[(rank, True)]} games_with_phase={dict(counter)}")
   print(f"skipped while annotating={dict(skipped)}")

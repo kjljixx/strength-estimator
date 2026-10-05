@@ -108,9 +108,10 @@ Start from an existing SGF file (no PGN download or conversion) and write everyt
 python3 scripts/sgf_filter_random_sample.py --input training_sgf/2024-01-convert.txt --elo-interval 100 --held-out-dir candidate_sgf_chess --held-out-dir query_sgf_chess --stats-only
 
 # split, tag opening/midgame/endgame boundaries, and merge into data/chess_phase_100/
-./scripts/preprocess_games.sh elo --from-sgf training_sgf/2024-01-convert.txt --elo-interval 100 --phase-examples --output-root data/chess_phase_100
+./scripts/preprocess_games.sh elo --from-sgf training_sgf/2024-01-convert.txt --elo-interval 100 --phase-examples --max-train-per-bin 40000 --output-root data/chess_phase_100
 ```
 
+- `--max-train-per-bin N` randomly keeps at most N training games per bin (the loader keeps all training games in memory); the script checks free disk before writing.
 - Both players of a game must fall in the same 100-point bin; excluded games are counted in the log.
 - Games in `candidate_sgf_chess/` and `query_sgf_chess/` (matched by exact game line) are never used for training; new candidate/query sets are drawn per 100-point bin.
 - `--phase-examples` adds `PM[<first midgame move>]PE[<first endgame move>]` (`-1` if the game never reaches that phase) to each training game. Boundaries come from `interpretable-elo/phase_rules.py`, shared with `analyze.py`. Complete games are stored once; the loader builds the phase examples.

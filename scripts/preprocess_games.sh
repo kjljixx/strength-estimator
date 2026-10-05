@@ -10,6 +10,7 @@
 #   --from-sgf FILE         start from an existing SGF file or directory instead of downloading/converting PGN
 #   --elo-interval N        Elo bin width (default 200)
 #   --phase-examples        tag training games with opening/midgame/endgame boundaries
+#   --max-train-per-bin N   keep at most N random training games per Elo bin (default: all)
 #   --output-root DIR       write everything under DIR instead of the repository root
 #   --held-out-dir DIR      held-out SGFs to exclude from training (repeatable; default candidate_sgf_chess query_sgf_chess)
 
@@ -19,6 +20,7 @@ shift 2>/dev/null
 FROM_SGF=""
 ELO_INTERVAL=200
 PHASE_FLAG=""
+MAX_TRAIN_PER_BIN=0
 OUTPUT_ROOT=""
 HELD_OUT_DIRS=()
 while [[ $# -gt 0 ]]; do
@@ -26,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --from-sgf) FROM_SGF="$2"; shift 2 ;;
     --elo-interval) ELO_INTERVAL="$2"; shift 2 ;;
     --phase-examples) PHASE_FLAG="--phase-examples"; shift ;;
+    --max-train-per-bin) MAX_TRAIN_PER_BIN="$2"; shift 2 ;;
     --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
     --held-out-dir) HELD_OUT_DIRS+=("$2"); shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -36,7 +39,7 @@ if [[ -n "$OUTPUT_ROOT" && "$MODE" != "elo" ]]; then
   echo "ERROR: --output-root only supports the elo mode" >&2
   exit 1
 fi
-echo "Preprocess config: mode=$MODE from_sgf=${FROM_SGF:-<download>} elo_interval=$ELO_INTERVAL phase_examples=${PHASE_FLAG:-off} output_root=${OUTPUT_ROOT:-<repo root>}"
+echo "Preprocess config: mode=$MODE from_sgf=${FROM_SGF:-<download>} elo_interval=$ELO_INTERVAL phase_examples=${PHASE_FLAG:-off} max_train_per_bin=$MAX_TRAIN_PER_BIN output_root=${OUTPUT_ROOT:-<repo root>}"
 
 if [[ -z "$FROM_SGF" ]]; then
   cp ./scripts/data.py download_chess_game/
@@ -59,7 +62,7 @@ run_elo_pipeline() {
   local train_target="training_chess_chain_raw"
   local query_target="query_sgf_chess"
   local cand_target="candidate_sgf_chess"
-  local filter_args=(--input "${FROM_SGF:-training_sgf}" --elo-interval "$ELO_INTERVAL" $PHASE_FLAG)
+  local filter_args=(--input "${FROM_SGF:-training_sgf}" --elo-interval "$ELO_INTERVAL" --max-train-per-bin "$MAX_TRAIN_PER_BIN" $PHASE_FLAG)
 
   if [[ -n "$OUTPUT_ROOT" ]]; then
     split_root="$OUTPUT_ROOT/split"
