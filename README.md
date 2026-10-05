@@ -100,6 +100,28 @@ query_sgf_chess/
 
 To reproduce the main experiment in the paper, you should prepapre 8 ranks (elo 1000-1199, 1200-1399, ... , and 2400-2599) of game records.
 
+##### 100-point Elo bins with game-phase examples
+Start from an existing SGF file (no PGN download or conversion) and write everything to a separate directory:
+
+```bash
+# count games per bin first, without writing anything (also reports how many games narrower bins exclude)
+python3 scripts/sgf_filter_random_sample.py --input training_sgf/2024-01-convert.txt --elo-interval 100 --held-out-dir candidate_sgf_chess --held-out-dir query_sgf_chess --stats-only
+
+# split, tag opening/midgame/endgame boundaries, and merge into data/chess_phase_100/
+./scripts/preprocess_games.sh elo --from-sgf training_sgf/2024-01-convert.txt --elo-interval 100 --phase-examples --output-root data/chess_phase_100
+```
+
+- Both players of a game must fall in the same 100-point bin; excluded games are counted in the log.
+- Games in `candidate_sgf_chess/` and `query_sgf_chess/` (matched by exact game line) are never used for training; new candidate/query sets are drawn per 100-point bin.
+- `--phase-examples` adds `PM[<first midgame move>]PE[<first endgame move>]` (`-1` if the game never reaches that phase) to each training game. Boundaries come from `interpretable-elo/phase_rules.py`, shared with `analyze.py`. Complete games are stored once; the loader builds the phase examples.
+
+Train with `cfg/se_chess_phase_100.cfg` (16 bins, `bt_use_phase_examples=true`):
+```bash
+cmake --build build/chess --target strength strength_py --parallel 8   # rebuild both the executable and the sampler extension
+./scripts/train.sh chess cfg/se_chess_phase_100.cfg -n chess_phase_100
+```
+Each opening, midgame and endgame of a game is its own example. For every ranking group the loader draws one example per Elo bin uniformly from that bin's full pool, picks one eligible player (White or Black), and samples 7 distinct positions from that player within that phase. Examples where neither player has 7 positions are skipped. The loader logs examples and skips per bin and phase at startup, and fails if any bin has no eligible example or if `learner_batch_size` differs from `bt_num_batch_size * bt_num_rank_per_batch * bt_num_position_per_rank`.
+
 
 ### Train Strength Estimator
 

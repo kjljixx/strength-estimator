@@ -28,6 +28,16 @@ struct WinChainSlot {
   int player_ = 1;
 };
 
+// One opening, midgame or endgame of a stored game: moves [start_, end_) of env_loaders_map_[rank][env_id_].
+struct PhaseExample {
+  int env_id_ = -1;
+  int phase_ = 0;
+  int start_ = 0;
+  int end_ = 0;
+  // bit 0: kPlayer1 has enough positions in the phase, bit 1: kPlayer2
+  int eligible_players_ = 0;
+};
+
 class StBatchDataPtr : public minizero::learner::BatchDataPtr {
 public:
   float* rank_;
@@ -41,6 +51,7 @@ public:
   std::vector<GamePosition> bt_game_positions_;
   std::map<int, int> rank_label_map_;
   std::map<int, std::vector<EnvironmentLoader>> env_loaders_map_;
+  std::map<int, std::vector<PhaseExample>> phase_examples_map_;
 
   // Win-chain lazy loading: offset index + chains
   std::string chain_games_file_;
@@ -86,6 +97,8 @@ public:
 private:
   void allocateBTGamePositions();
   void allocateBTWinChainPositions();
+  void buildPhaseExamples();
+  void allocateBTPhaseExamplePositions(int rank);
 
   // Win-chain lazy loading helpers
   void indexChainGamesFile(const std::string& file_name);

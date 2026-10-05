@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -19,6 +21,69 @@ namespace strength {
 
 using namespace minizero;
 using namespace minizero::utils;
+
+namespace {
+
+constexpr int kNumPhases = 3;
+const char* const kPhaseNames[kNumPhases] = {"opening", "midgame", "endgame"};
+
+struct PhaseRange {
+  int phase_;
+  int start_;
+  int end_;
+};
+
+struct PhaseCounts {
+  int games_ = 0;
+  int missing_tags_ = 0;
+  int invalid_tags_ = 0;
+  int examples_[kNumPhases] = {};
+  int too_few_positions_[kNumPhases] = {};
+};
+
+inline int playerBit(env::Player player) { return 1 << (static_cast<int>(player) - 1); }
+
+std::vector<int> playerPositions(const EnvironmentLoader& env_loader, env::Player player, int start, int end)
+{
+  std::vector<int> positions;
+  for (int j = start; j < end; ++j) {
+    if (env_loader.getActionPairs()[j].first.getPlayer() == player) { positions.emplace_back(j); }
+  }
+  return positions;
+}
+
+// PM[] and PE[] hold the first move index of the midgame and endgame, or -1 when the game never reaches it.
+std::string parsePhaseRanges(const EnvironmentLoader& env_loader, std::vector<PhaseRange>& ranges)
+{
+  const std::string middle_tag = env_loader.getTag("PM");
+  const std::string end_tag = env_loader.getTag("PE");
+  if (middle_tag.empty() || end_tag.empty()) { return "missing_phase_tags"; }
+
+  int middle = -1;
+  int end = -1;
+  try {
+    middle = std::stoi(middle_tag);
+    end = std::stoi(end_tag);
+  } catch (const std::exception&) {
+    return "invalid_phase_tags";
+  }
+  const int num_moves = static_cast<int>(env_loader.getActionPairs().size());
+  const bool middle_valid = middle >= -1 && middle < num_moves;
+  const bool end_valid = end >= -1 && end < num_moves && (end == -1 || (middle != -1 && middle < end));
+  if (!middle_valid || !end_valid) { return "invalid_phase_tags"; }
+
+  std::vector<std::pair<int, int>> starts = {{0, 0}};
+  if (middle >= 0) { starts.emplace_back(1, middle); }
+  if (end >= 0) { starts.emplace_back(2, end); }
+  ranges.clear();
+  for (size_t i = 0; i < starts.size(); ++i) {
+    int stop = (i + 1 < starts.size()) ? starts[i + 1].second : num_moves;
+    if (stop > starts[i].second) { ranges.push_back({starts[i].first, starts[i].second, stop}); }
+  }
+  return "";
+}
+
+} // namespace
 
 bool StDataLoaderThread::addEnvironmentLoader()
 {
@@ -273,6 +338,12 @@ EnvironmentLoader StDataLoader::loadChainGame(int game_id)
 
 void StDataLoader::loadDataFromFile(const std::string& file_name)
 {
+  if (strength::bt_use_phase_examples && strength::bt_use_win_chains) {
+    throw std::runtime_error("bt_use_phase_examples cannot be combined with bt_use_win_chains");
+  }
+  if (strength::bt_use_phase_examples && strength::bt_add_non_people) {
+    throw std::runtime_error("bt_use_phase_examples cannot be combined with bt_add_non_people");
+  }
   if (strength::bt_use_win_chains) {
     indexChainGamesFile(file_name);
 
@@ -289,6 +360,87 @@ void StDataLoader::loadDataFromFile(const std::string& file_name)
   int label = 0;
   getSharedData()->rank_label_map_.clear();
   for (auto& m : getSharedData()->env_loaders_map_) { getSharedData()->rank_label_map_[m.first] = label++; }
+  if (strength::bt_use_phase_examples) { buildPhaseExamples(); }
+}
+
+void StDataLoader::buildPhaseExamples()
+{
+  const int num_bins = strength::nn_rank_size;
+  const int num_positions = strength::bt_num_position_per_rank;
+  const int batch_positions = strength::bt_num_batch_size * strength::bt_num_rank_per_batch * num_positions;
+  std::cerr << "=== phase example loader ===" << std::endl;
+  std::cerr << "elo_bins=" << num_bins << " min_elo=" << strength::nn_rank_min_elo
+            << " elo_interval=" << strength::nn_rank_elo_interval
+            << " bt_num_batch_size=" << strength::bt_num_batch_size
+            << " bt_num_rank_per_batch=" << strength::bt_num_rank_per_batch
+            << " positions_per_example=" << num_positions
+            << " positions_per_step=" << batch_positions
+            << " learner_batch_size=" << config::learner_batch_size << std::endl;
+
+  if (batch_positions != config::learner_batch_size) {
+    throw std::runtime_error("phase examples need learner_batch_size == bt_num_batch_size * bt_num_rank_per_batch * bt_num_position_per_rank");
+  }
+  if (strength::bt_num_rank_per_batch > num_bins) {
+    throw std::runtime_error("bt_num_rank_per_batch cannot exceed nn_rank_size");
+  }
+
+  getSharedData()->phase_examples_map_.clear();
+  std::map<int, PhaseCounts> counts;
+  std::vector<PhaseRange> ranges;
+  for (const auto& bin : getSharedData()->env_loaders_map_) {
+    if (bin.first < 0 || bin.first >= num_bins) {
+      throw std::runtime_error("games found in elo bin " + std::to_string(bin.first) + " outside [0, nn_rank_size)");
+    }
+    PhaseCounts& bin_counts = counts[bin.first];
+    std::vector<PhaseExample>& examples = getSharedData()->phase_examples_map_[bin.first];
+    for (size_t env_id = 0; env_id < bin.second.size(); ++env_id) {
+      const EnvironmentLoader& env_loader = bin.second[env_id];
+      ++bin_counts.games_;
+      const std::string error = parsePhaseRanges(env_loader, ranges);
+      if (!error.empty()) {
+        (error == "missing_phase_tags" ? bin_counts.missing_tags_ : bin_counts.invalid_tags_)++;
+        continue;
+      }
+      for (const PhaseRange& range : ranges) {
+        PhaseExample example;
+        example.env_id_ = static_cast<int>(env_id);
+        example.phase_ = range.phase_;
+        example.start_ = range.start_;
+        example.end_ = range.end_;
+        for (env::Player player : {env::Player::kPlayer1, env::Player::kPlayer2}) {
+          if (static_cast<int>(playerPositions(env_loader, player, range.start_, range.end_).size()) >= num_positions) {
+            example.eligible_players_ |= playerBit(player);
+          }
+        }
+        if (example.eligible_players_ == 0) {
+          ++bin_counts.too_few_positions_[range.phase_];
+          continue;
+        }
+        examples.push_back(example);
+        ++bin_counts.examples_[range.phase_];
+      }
+    }
+  }
+
+  std::vector<int> empty_bins;
+  for (int bin = 0; bin < num_bins; ++bin) {
+    const int low_elo = strength::nn_rank_min_elo + bin * strength::nn_rank_elo_interval;
+    const PhaseCounts& bin_counts = counts[bin];
+    std::cerr << "bin=" << bin << " elo=" << low_elo << "-" << (low_elo + strength::nn_rank_elo_interval - 1)
+              << " games=" << bin_counts.games_;
+    for (int phase = 0; phase < kNumPhases; ++phase) {
+      std::cerr << " " << kPhaseNames[phase] << "=" << bin_counts.examples_[phase]
+                << "(skipped_fewer_than_" << num_positions << "_positions=" << bin_counts.too_few_positions_[phase] << ")";
+    }
+    std::cerr << " skipped_missing_phase_tags=" << bin_counts.missing_tags_
+              << " skipped_invalid_phase_tags=" << bin_counts.invalid_tags_ << std::endl;
+    if (getSharedData()->phase_examples_map_[bin].empty()) { empty_bins.push_back(bin); }
+  }
+  if (!empty_bins.empty()) {
+    std::string message = "no eligible phase examples for elo bins:";
+    for (int bin : empty_bins) { message += " " + std::to_string(bin); }
+    throw std::runtime_error(message);
+  }
 }
 
 void StDataLoader::loadWinChainsFromFile(const std::string& file_name)
@@ -515,7 +667,9 @@ void StDataLoader::allocateBTGamePositions()
     for (int i = 0; i < num_rank; ++i) {
       int rank = ranks[i];
 
-      if (strength::bt_use_same_game_per_rank) {
+      if (strength::bt_use_phase_examples) {
+        allocateBTPhaseExamplePositions(rank);
+      } else if (strength::bt_use_same_game_per_rank) {
         int env_id = Random::randInt() % getSharedData()->env_loaders_map_[rank].size();
         const EnvironmentLoader& env_loader = getSharedData()->env_loaders_map_[rank][env_id];
         env::Player player = (Random::randInt() % 2 == 0 ? env::Player::kPlayer1 : env::Player::kPlayer2);
@@ -535,6 +689,35 @@ void StDataLoader::allocateBTGamePositions()
         }
       }
     }
+  }
+  if (strength::bt_use_phase_examples) {
+    const size_t expected = static_cast<size_t>(strength::bt_num_batch_size) * strength::bt_num_rank_per_batch * strength::bt_num_position_per_rank;
+    if (getSharedData()->bt_game_positions_.size() != expected) {
+      throw std::runtime_error("phase example sampler produced " + std::to_string(getSharedData()->bt_game_positions_.size()) +
+                               " positions, expected " + std::to_string(expected));
+    }
+  }
+}
+
+void StDataLoader::allocateBTPhaseExamplePositions(int rank)
+{
+  const std::vector<PhaseExample>& examples = getSharedData()->phase_examples_map_.at(rank);
+  const PhaseExample& example = examples[Random::randInt() % examples.size()];
+  const EnvironmentLoader& env_loader = getSharedData()->env_loaders_map_.at(rank)[example.env_id_];
+
+  std::vector<env::Player> eligible_players;
+  for (env::Player player : {env::Player::kPlayer1, env::Player::kPlayer2}) {
+    if (example.eligible_players_ & playerBit(player)) { eligible_players.push_back(player); }
+  }
+  env::Player player = eligible_players[Random::randInt() % eligible_players.size()];
+
+  std::vector<int> positions = playerPositions(env_loader, player, example.start_, example.end_);
+  if (static_cast<int>(positions.size()) < strength::bt_num_position_per_rank) {
+    throw std::runtime_error("phase example in bin " + std::to_string(rank) + " game " + std::to_string(example.env_id_) + " has too few positions");
+  }
+  std::random_shuffle(positions.begin(), positions.end());
+  for (int j = 0; j < strength::bt_num_position_per_rank; ++j) {
+    getSharedData()->bt_game_positions_.emplace_back(GamePosition(rank, example.env_id_, positions[j]));
   }
 }
 

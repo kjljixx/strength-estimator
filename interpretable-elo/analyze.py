@@ -14,61 +14,7 @@ from pathlib import Path
 import chess
 import chess.pgn
 
-
-PHASES = ("opening", "midgame", "endgame")
-
-
-def mixedness(board: chess.Board) -> int:
-  def score(rank: int, white: int, black: int) -> int:
-    if white == 0:
-      return {1: 1 + rank, 2: max(0, 8 - rank) if rank < 6 else 0,
-              3: 10 - rank if rank < 7 else 0,
-              4: 10 - rank if rank < 7 else 0}.get(black, 0)
-    if white == 1:
-      return {0: 9 - rank, 1: 5 + abs(4 - rank), 2: 11 - rank,
-              3: 12 - rank}.get(black, 0)
-    if white == 2:
-      return {0: rank if rank > 2 else 0, 1: rank + 3,
-              2: 7}.get(black, 0)
-    if white == 3:
-      return {0: rank + 2 if rank > 1 else 0,
-              1: rank + 4}.get(black, 0)
-    if white == 4 and black == 0:
-      return rank + 2 if rank > 1 else 0
-    return 0
-
-  total = 0
-  for rank in range(1, 8):
-    for file in range(7):
-      region = sum(1 << chess.square(file + x, rank - 1 + y)
-                   for x in range(2) for y in range(2))
-      total += score(rank, chess.popcount(board.occupied_co[chess.WHITE] & region),
-                     chess.popcount(board.occupied_co[chess.BLACK] & region))
-  return total
-
-
-def phase_boundaries(boards: list[chess.Board]) -> tuple[int | None, int | None]:
-  def piece_count(board: chess.Board) -> int:
-    return chess.popcount(board.occupied & ~(board.kings | board.pawns))
-
-  middle = next((index for index, board in enumerate(boards)
-                 if piece_count(board) <= 10
-                 or chess.popcount(board.occupied_co[chess.WHITE] & chess.BB_RANK_1) < 4
-                 or chess.popcount(board.occupied_co[chess.BLACK] & chess.BB_RANK_8) < 4
-                 or mixedness(board) > 150), None)
-  end = next((index for index, board in enumerate(boards)
-              if piece_count(board) <= 6), None) if middle is not None else None
-  if middle == end:
-    middle = None
-  return middle, end
-
-
-def phase_for(ply_index: int, middle: int | None, end: int | None) -> str:
-  if end is not None and ply_index >= end:
-    return "endgame"
-  if middle is not None and ply_index >= middle:
-    return "midgame"
-  return "opening"
+from phase_rules import phase_boundaries, phase_for, PHASES
 
 
 def instantaneous_score(average: float, previous_average: float, move_count: int) -> float:
