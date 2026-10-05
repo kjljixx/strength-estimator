@@ -118,7 +118,7 @@ python3 scripts/sgf_filter_random_sample.py --input training_sgf/2024-01-convert
 
 Train with `cfg/se_chess_phase_100.cfg` (16 bins, `bt_use_phase_examples=true`):
 ```bash
-cmake --build build/chess --target strength strength_py --parallel 8   # rebuild both the executable and the sampler extension
+cmake --build build/chess --target strength strength_py strength_train_py --parallel 8   # executable, scorer module, and the lean module train.py imports
 ./scripts/train.sh chess cfg/se_chess_phase_100.cfg -n chess_phase_100
 ```
 Each opening, midgame and endgame of a game is its own example. For every ranking group the loader draws one example per Elo bin uniformly from that bin's full pool, picks one eligible player (White or Black), and samples 7 distinct positions from that player within that phase. Examples where neither player has 7 positions are skipped. The loader logs examples and skips per bin and phase at startup, and fails if any bin has no eligible example or if `learner_batch_size` differs from `bt_num_batch_size * bt_num_rank_per_batch * bt_num_position_per_rank`.

@@ -232,8 +232,8 @@ if __name__ == '__main__':
         conf_file_name = sys.argv[4]
 
         # import pybind library
-        _temps = __import__(f'build.{game_type}', globals(), locals(), ['strength_py'], 0)
-        py = _temps.strength_py
+        _temps = __import__(f'build.{game_type}', globals(), locals(), ['strength_train_py'], 0)
+        py = _temps.strength_train_py
     else:
         eprint("python train.py game_type training_dir model_file_name conf_file")
         exit(0)

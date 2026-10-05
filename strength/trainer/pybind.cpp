@@ -1,7 +1,9 @@
 #include "st_configuration.h"
 #include "st_data_loader.h"
 #include "game_wrapper.h"
+#ifndef STRENGTH_PY_TRAINING_ONLY
 #include "strength_network.h"
+#endif
 #include <iostream>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -21,6 +23,7 @@ Environment& getEnvInstance()
     return *kEnvInstance;
 }
 
+#ifndef STRENGTH_PY_TRAINING_ONLY
 class StrengthScorer {
 public:
     StrengthScorer(const std::string& config_file, const std::string& checkpoint_file, int gpu_id)
@@ -70,12 +73,20 @@ public:
 private:
     std::shared_ptr<StrengthNetwork> network_;
 };
+#endif
 
-PYBIND11_MODULE(strength_py, m)
+#ifndef STRENGTH_PY_MODULE_NAME
+#define STRENGTH_PY_MODULE_NAME strength_py
+#endif
+#define STRENGTH_PY_MODULE(name) PYBIND11_MODULE(name, m)
+
+STRENGTH_PY_MODULE(STRENGTH_PY_MODULE_NAME)
 {
+#ifndef STRENGTH_PY_TRAINING_ONLY
     py::class_<StrengthScorer>(m, "StrengthScorer")
         .def(py::init<const std::string&, const std::string&, int>(), py::arg("config_file"), py::arg("checkpoint_file"), py::arg("gpu_id") = 0)
         .def("score_sgf", &StrengthScorer::score_sgf);
+#endif
     m.def("load_config_file", [](std::string file_name) {
         env::setUpEnv();
         config::ConfigureLoader cl;
