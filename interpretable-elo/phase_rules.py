@@ -69,6 +69,9 @@ def engine_move_to_move(board: chess.Board, uci: str) -> chess.Move:
       and target_piece.color == moving_piece.color):
     file = chess.G1 if chess.square_file(move.to_square) > chess.square_file(move.from_square) else chess.C1
     return chess.Move(move.from_square, file + 56 * chess.square_rank(move.from_square) // 7)
+  reaches_last_rank = chess.square_rank(move.to_square) in (0, 7)
+  if moving_piece is not None and moving_piece.piece_type == chess.PAWN and reaches_last_rank and move.promotion is None:
+    return chess.Move(move.from_square, move.to_square, chess.KNIGHT)
   return move
 
 

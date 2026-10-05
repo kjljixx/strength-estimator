@@ -10,7 +10,7 @@ import chess
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "interpretable-elo"))
 
-from phase_rules import boards_after_moves, phase_boundaries, phase_ranges
+from phase_rules import boards_after_moves, engine_move_to_move, phase_boundaries, phase_ranges
 
 SPEC = importlib.util.spec_from_file_location("sgf_filter", ROOT / "scripts" / "sgf_filter_random_sample.py")
 sgf_filter = importlib.util.module_from_spec(SPEC)
@@ -107,3 +107,10 @@ def test_missing_phases_are_tagged_minus_one():
 
 def test_illegal_moves_are_skipped_with_reason():
   assert sgf_filter.add_phase_tags(sgf_line(1500, 1500, ("e2e5",)))[1] == "illegal_move_replay"
+
+
+def test_suffixless_last_rank_pawn_move_is_knight_promotion():
+  board = chess.Board("8/3P2K1/4k3/8/6P1/8/8/8 w - - 1 55")
+  move = engine_move_to_move(board, "d7d8")
+  assert move.promotion == chess.KNIGHT and board.is_legal(move)
+  assert engine_move_to_move(board, "d7d8q").promotion == chess.QUEEN
