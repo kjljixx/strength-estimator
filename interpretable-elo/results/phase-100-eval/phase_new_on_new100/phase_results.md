@@ -1,10 +1,12 @@
 # Phase Elo gaps: chess_phase_100/model/weight_iter_100000.pt
 
-Queries `data/chess_phase_100/query_sgf_chess`, calibration `eval_phase_100/new_on_new100/calibration.json` (whole-game, monotone, clamped), 200 bootstrap resamples over games.
+Queries `data/chess_phase_100/query_sgf_chess`, 200 bootstrap resamples over games.
 Phase Elo = Elo of the mean score over all moves in that phase, pooled over the bin's games.
 Gap = phase Elo minus the average of the bin's three phase Elos (sums to zero within a bin); ± is the bootstrap standard error.
 Centered gap subtracts each phase's mean gap over bins, leaving only how the gap changes with rating.
 Error vs true rating = phase Elo minus the mean recorded rating of the bin's players.
+
+# A. One whole-game calibration for all phases (`eval_phase_100/new_on_new100/calibration.json`; monotone, clamped)
 
 ## Summary over bins
 | phase | mean_gap | mean_abs_gap | mean_error_vs_true_rating |
@@ -72,3 +74,73 @@ Error vs true rating = phase Elo minus the mean recorded rating of the bin's pla
 | 2300-2400 | +145.2 | +204.4 | -217.3 |
 | 2400-2500 | +105.3 | +105.3 | -295.7 |
 | 2500-2600 | +5.5 | +5.5 | -366.4 |
+
+# B. Each phase calibrated with its own candidate-game scores (`data/chess_phase_100/candidate_sgf_chess`)
+
+## Candidate score rise per 100 Elo (linear fit over buckets)
+| phase | score_per_100_elo |
+|---|---|
+| opening | 0.229 |
+| midgame | 0.228 |
+| endgame | 0.155 |
+
+## Summary over bins
+| phase | mean_gap | mean_abs_gap | mean_error_vs_true_rating |
+|---|---|---|---|
+| opening | -10.829 | 18.043 | 4.744 |
+| midgame | -5.185 | 13.220 | 10.388 |
+| endgame | 16.013 | 23.018 | 31.586 |
+
+## Gap vs phase average
+| bucket | opening | midgame | endgame |
+|---|---|---|---|
+| 1000-1100 | -41.9 ± 3.8 | +8.1 ± 3.8 | +33.8 ± 7.7 |
+| 1100-1200 | -23.9 ± 8.6 | +8.5 ± 9.7 | +15.4 ± 8.8 |
+| 1200-1300 | -20.3 ± 8.0 | +14.0 ± 5.5 | +6.3 ± 9.1 |
+| 1300-1400 | +5.4 ± 8.3 | -23.1 ± 5.8 | +17.6 ± 9.5 |
+| 1400-1500 | -1.7 ± 6.2 | +5.7 ± 5.5 | -4.0 ± 8.1 |
+| 1500-1600 | -19.3 ± 7.9 | -13.4 ± 7.3 | +32.8 ± 12.6 |
+| 1600-1700 | -28.1 ± 7.7 | -2.5 ± 6.6 | +30.7 ± 9.0 |
+| 1700-1800 | +25.2 ± 7.2 | -15.9 ± 7.5 | -9.3 ± 12.0 |
+| 1800-1900 | -6.4 ± 6.5 | -16.9 ± 5.8 | +23.3 ± 10.2 |
+| 1900-2000 | -15.6 ± 6.0 | -4.9 ± 5.0 | +20.5 ± 8.1 |
+| 2000-2100 | +9.5 ± 4.1 | -6.5 ± 3.9 | -3.0 ± 5.9 |
+| 2100-2200 | +15.5 ± 4.2 | -2.7 ± 3.8 | -12.8 ± 5.0 |
+| 2200-2300 | +2.0 ± 12.8 | +25.0 ± 12.7 | -27.0 ± 22.2 |
+| 2300-2400 | -31.2 ± 16.2 | -27.2 ± 15.6 | +58.4 ± 30.1 |
+| 2400-2500 | -15.9 ± 8.3 | -34.2 ± 8.9 | +50.1 ± 11.0 |
+| 2500-2600 | -26.5 ± 6.5 | +3.1 ± 11.7 | +23.5 ± 6.5 |
+
+## Error vs true rating
+| bucket | opening | midgame | endgame |
+|---|---|---|---|
+| 1000-1100 | -0.6 | +49.4 | +75.0 |
+| 1100-1200 | -1.2 | +31.2 | +38.1 |
+| 1200-1300 | +1.9 | +36.1 | +28.4 |
+| 1300-1400 | +14.9 | -13.7 | +27.1 |
+| 1400-1500 | +6.6 | +14.0 | +4.4 |
+| 1500-1600 | -26.5 | -20.5 | +25.6 |
+| 1600-1700 | -38.2 | -12.6 | +20.6 |
+| 1700-1800 | +45.9 | +4.8 | +11.5 |
+| 1800-1900 | +28.5 | +18.0 | +58.2 |
+| 1900-2000 | +18.0 | +28.8 | +54.1 |
+| 2000-2100 | +19.5 | +3.5 | +7.0 |
+| 2100-2200 | +2.7 | -15.5 | -25.6 |
+| 2200-2300 | -4.3 | +18.6 | -33.3 |
+| 2300-2400 | +34.9 | +38.9 | +124.5 |
+| 2400-2500 | +18.3 | +0.1 | +84.3 |
+| 2500-2600 | -44.5 | -15.0 | +5.5 |
+
+# C. Bucket prediction from one phase only (own calibration)
+
+| phase | games_averaged | accuracy_exact | accuracy_within_one_bucket | mean_signed_error | mean_absolute_error | fraction_trials_with_phase_moves |
+|---|---|---|---|---|---|---|
+| opening | 10 | 0.326 | 0.763 | 5.276 | 98.548 | 1.000 |
+| opening | 25 | 0.453 | 0.908 | 3.518 | 65.658 | 1.000 |
+| opening | 100 | 0.679 | 0.986 | 5.296 | 38.501 | 1.000 |
+| midgame | 10 | 0.318 | 0.780 | 9.338 | 97.439 | 1.000 |
+| midgame | 25 | 0.442 | 0.917 | 8.497 | 66.286 | 1.000 |
+| midgame | 100 | 0.666 | 0.994 | 9.958 | 38.892 | 1.000 |
+| endgame | 10 | 0.200 | 0.539 | 17.354 | 168.195 | 1.000 |
+| endgame | 25 | 0.275 | 0.693 | 22.028 | 115.263 | 1.000 |
+| endgame | 100 | 0.429 | 0.892 | 27.170 | 67.803 | 1.000 |
