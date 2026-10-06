@@ -15,7 +15,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eval_bins import RATING_PATTERNS, bucket_paths, markdown_table, monotone_elo_curve, write_csv
+from eval_bins import RATING_PATTERNS, bucket_paths, elo_from_score, line_fit_quality, linear_calibration, markdown_table, write_csv
 from phase_elo import phase_totals
 from phase_rules import PHASES, boards_after_moves
 
@@ -82,23 +82,23 @@ def phase_calibrations(rows) -> list[list[dict]]:
   return calibrations
 
 
-def phase_estimates(sums: np.ndarray, counts: np.ndarray, curves: list[tuple[np.ndarray, np.ndarray]]) -> np.ndarray:
-  """Elo estimate per phase from summed scores and move counts of shape (games, 3), one curve per phase."""
+def phase_estimates(sums: np.ndarray, counts: np.ndarray, lines: list[tuple[float, float]]) -> np.ndarray:
+  """Elo estimate per phase from summed scores and move counts of shape (games, 3), one calibration line per phase."""
   scores = sums.sum(axis=0) / counts.sum(axis=0)
-  return np.array([np.interp(score, *curve) for score, curve in zip(scores, curves)])
+  return np.array([float(elo_from_score(score, line)) for score, line in zip(scores, lines)])
 
 
-def phase_gaps(rows, curves, bootstrap: int, rng) -> list[dict]:
+def phase_gaps(rows, lines, bootstrap: int, rng) -> list[dict]:
   results = []
   for low in sorted({int(row["low"]) for row in rows}):
     group = [row for row in rows if row["low"] == low]
     sums = np.array([[row["white_%s_sum" % phase] + row["black_%s_sum" % phase] for phase in PHASES] for row in group])
     counts = np.array([[row["white_%s_count" % phase] + row["black_%s_count" % phase] for phase in PHASES] for row in group])
     true_rating = float(np.mean([[row["white_rating"], row["black_rating"]] for row in group]))
-    estimates = phase_estimates(sums, counts, curves)
+    estimates = phase_estimates(sums, counts, lines)
     gaps = estimates - estimates.mean()
     resampled = np.array([
-      (lambda e: e - e.mean())(phase_estimates(sums[picks], counts[picks], curves))
+      (lambda e: e - e.mean())(phase_estimates(sums[picks], counts[picks], lines))
       for picks in rng.integers(0, len(group), size=(bootstrap, len(group)))])
     for index, phase in enumerate(PHASES):
       results.append({
@@ -119,7 +119,7 @@ def phase_gaps(rows, curves, bootstrap: int, rng) -> list[dict]:
 
 def phase_accuracy(rows, calibrations, sizes, trials, rng) -> list[dict]:
   """Predict the bucket from only one phase's moves, using that phase's own calibration."""
-  curves = [monotone_elo_curve(table) for table in calibrations]
+  lines = [linear_calibration(table) for table in calibrations]
   lows = [int(row["low"]) for row in calibrations[0]]
   results = []
   for index, phase in enumerate(PHASES):
@@ -136,7 +136,7 @@ def phase_accuracy(rows, calibrations, sizes, trials, rng) -> list[dict]:
         valid = trial_counts > 0
         scores = sums[picks].sum(axis=1)[valid] / trial_counts[valid]
         predicted = np.abs(scores[:, None] - bucket_means[None, :]).argmin(axis=1)
-        errors.append(np.interp(scores, *curves[index]) - ratings[picks].mean(axis=1)[valid])
+        errors.append(elo_from_score(scores, lines[index]) - ratings[picks].mean(axis=1)[valid])
         exact.append(predicted == true_index)
         within_one.append(np.abs(predicted - true_index) <= 1)
         used += int(valid.sum())
@@ -193,11 +193,11 @@ def main() -> int:
   scorer = strength_py.StrengthScorer(str(args.config), str(args.checkpoint), args.gpu_id)
   args.output_dir.mkdir(parents=True, exist_ok=True)
   calibration = json.loads(args.calibration.read_text(encoding="utf-8"))
-  curve = monotone_elo_curve(calibration)
+  line = linear_calibration(calibration)
 
   rows = score_phase_games(scorer, args.query_dir, args.output_dir / "phase_query_scores.csv")
   rng = np.random.default_rng(args.seed)
-  results = phase_gaps(rows, [curve] * len(PHASES), args.bootstrap, rng)
+  results = phase_gaps(rows, [line] * len(PHASES), args.bootstrap, rng)
   write_csv(args.output_dir / "phase_gaps.csv", results)
   report = [
     f"# Phase Elo gaps: {args.checkpoint}", "",
@@ -206,7 +206,7 @@ def main() -> int:
     "Gap = phase Elo minus the average of the bin's three phase Elos (sums to zero within a bin); ± is the bootstrap standard error.",
     "Centered gap subtracts each phase's mean gap over bins, leaving only how the gap changes with rating.",
     "Error vs true rating = phase Elo minus the mean recorded rating of the bin's players.", "",
-    f"# A. One whole-game calibration for all phases (`{args.calibration}`; monotone, clamped)", "",
+    f"# A. One whole-game calibration line for all phases (`{args.calibration}`; fit quality {line_fit_quality(calibration, line)})", "",
     "## Summary over bins", markdown_table(summary(results)), "",
     "## Gap vs phase average", markdown_table(pivot(results, "gap_vs_phase_average", with_se=True)), "",
     "## Centered gap", markdown_table(pivot(results, "gap_centered")), "",
@@ -216,17 +216,15 @@ def main() -> int:
     candidate_rows = score_phase_games(scorer, args.candidate_dir, args.output_dir / "phase_candidate_scores.csv")
     calibrations = phase_calibrations(candidate_rows)
     (args.output_dir / "phase_calibrations.json").write_text(json.dumps(dict(zip(PHASES, calibrations)), indent=2), encoding="utf-8")
-    curves = [monotone_elo_curve(table) for table in calibrations]
-    per_phase = phase_gaps(rows, curves, args.bootstrap, rng)
+    lines = [linear_calibration(table) for table in calibrations]
+    per_phase = phase_gaps(rows, lines, args.bootstrap, rng)
     write_csv(args.output_dir / "phase_gaps_per_phase_calibration.csv", per_phase)
     accuracy = phase_accuracy(rows, calibrations, args.sizes, args.trials, rng)
     write_csv(args.output_dir / "phase_accuracy.csv", accuracy)
-    slopes = [{"phase": phase,
-               "score_per_100_elo": float(np.polyfit([row["center"] for row in table], [row["mean_score"] for row in table], 1)[0] * 100)}
-              for phase, table in zip(PHASES, calibrations)]
+    slopes = [{"phase": phase, **line_fit_quality(table, line)} for phase, table, line in zip(PHASES, calibrations, lines)]
     report += [
-      f"# B. Each phase calibrated with its own candidate-game scores (`{args.candidate_dir}`)", "",
-      "## Candidate score rise per 100 Elo (linear fit over buckets)", markdown_table(slopes), "",
+      f"# B. Each phase with its own calibration line from candidate-game scores (`{args.candidate_dir}`)", "",
+      "## Per-phase calibration lines (score rise per 100 Elo and how far bucket means sit from the line)", markdown_table(slopes), "",
       "## Summary over bins", markdown_table(summary(per_phase)), "",
       "## Gap vs phase average", markdown_table(pivot(per_phase, "gap_vs_phase_average", with_se=True)), "",
       "## Error vs true rating", markdown_table(pivot(per_phase, "error_vs_true_rating")), "",

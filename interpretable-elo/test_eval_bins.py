@@ -62,5 +62,12 @@ def test_inverted_neighbour_buckets_do_not_explode_estimates():
   calibration[0]["mean_score"], calibration[1]["mean_score"] = calibration[1]["mean_score"] - 0.0001, calibration[0]["mean_score"]
   _, overall, _ = evaluate(synthetic_rows(rng), calibration)
   assert all(row["mean_absolute_error"] < 200 for row in overall)
-  scores, elos = eval_bins.monotone_elo_curve(calibration)
-  assert (np.diff(scores) > 0).all() and (np.diff(elos) >= 0).all()
+
+
+def test_linear_calibration_recovers_slope_and_inverts():
+  calibration = [{"center": center, "mean_score": 0.002 * (center - 1500)} for center in (1000, 1100, 1200, 1300)]
+  line = eval_bins.linear_calibration(calibration)
+  assert abs(line[1] - 0.002) < 1e-12
+  assert abs(float(eval_bins.elo_from_score(0.0, line)) - 1500) < 1e-6
+  assert eval_bins.line_fit_quality(calibration, line)["max_abs_bucket_residual_elo"] < 1e-6
+  assert abs(float(eval_bins.elo_from_score(0.5, line)) - 1750) < 1e-6

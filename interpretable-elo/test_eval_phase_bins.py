@@ -5,7 +5,7 @@ import numpy as np
 import eval_phase_bins
 from phase_rules import PHASES
 
-CURVE = (np.array([-1.0, 0.0, 1.0]), np.array([1000.0, 1500.0, 2000.0]))
+LINE = (-3.0, 0.002)
 
 
 def rows_with_phase_scores(scores, games=50, rating=1500):
@@ -21,7 +21,7 @@ def rows_with_phase_scores(scores, games=50, rating=1500):
 
 
 def gaps(scores):
-  results = eval_phase_bins.phase_gaps(rows_with_phase_scores(scores), [CURVE] * 3, 20, np.random.default_rng(0))
+  results = eval_phase_bins.phase_gaps(rows_with_phase_scores(scores), [LINE] * 3, 20, np.random.default_rng(0))
   return {row["phase"]: row for row in results}
 
 
@@ -58,9 +58,9 @@ def synthetic_phase_rows(slopes, games=150, noise=0.2, seed=0):
 def test_per_phase_calibration_removes_slope_driven_gaps():
   rows = synthetic_phase_rows((0.3, 0.3, 0.15))
   calibrations = eval_phase_bins.phase_calibrations(rows)
-  curves = [eval_phase_bins.monotone_elo_curve(table) for table in calibrations]
-  whole = eval_phase_bins.phase_gaps(rows, [curves[0]] * 3, 20, np.random.default_rng(0))
-  per_phase = eval_phase_bins.phase_gaps(rows, curves, 20, np.random.default_rng(0))
+  lines = [eval_phase_bins.linear_calibration(table) for table in calibrations]
+  whole = eval_phase_bins.phase_gaps(rows, [lines[0]] * 3, 20, np.random.default_rng(0))
+  per_phase = eval_phase_bins.phase_gaps(rows, lines, 20, np.random.default_rng(0))
   top = lambda results: next(r for r in results if r["bucket"] == "1300-1400" and r["phase"] == "endgame")
   assert top(whole)["gap_vs_phase_average"] < -40
   assert abs(top(per_phase)["gap_vs_phase_average"]) < 10
