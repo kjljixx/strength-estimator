@@ -54,3 +54,13 @@ def test_pairwise_ordering_improves_with_gap_and_games():
 def test_calibration_order_violation_is_reported():
   calibration = [{"low": 1000, "high": 1100, "mean_score": 0.2}, {"low": 1100, "high": 1200, "mean_score": 0.1}]
   assert len(eval_bins.calibration_monotonic(calibration)) == 1
+
+
+def test_inverted_neighbour_buckets_do_not_explode_estimates():
+  rng = np.random.default_rng(4)
+  calibration = eval_bins.build_calibration(synthetic_rows(rng))
+  calibration[0]["mean_score"], calibration[1]["mean_score"] = calibration[1]["mean_score"] - 0.0001, calibration[0]["mean_score"]
+  _, overall, _ = evaluate(synthetic_rows(rng), calibration)
+  assert all(row["mean_absolute_error"] < 200 for row in overall)
+  scores, elos = eval_bins.monotone_elo_curve(calibration)
+  assert (np.diff(scores) > 0).all() and (np.diff(elos) >= 0).all()

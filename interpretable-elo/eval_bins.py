@@ -15,7 +15,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from overall import BUCKET_PATTERN, color_move_count, estimate_elo
+from overall import BUCKET_PATTERN, color_move_count
 from prediction_testing.sgf import move_count
 
 RATING_PATTERNS = {"white": re.compile(r"WR\[(\d+)\]"), "black": re.compile(r"BR\[(\d+)\]")}
@@ -92,8 +92,20 @@ def player_entries(rows: list[dict[str, float]], low: int) -> dict[str, np.ndarr
   }
 
 
+def monotone_elo_curve(calibration) -> tuple[np.ndarray, np.ndarray]:
+  """Pool buckets whose scores are out of Elo order (pool-adjacent-violators), giving a non-decreasing score-to-Elo curve."""
+  blocks = []
+  for row in sorted(calibration, key=lambda row: float(row["mean_score"])):
+    blocks.append([float(row["center"]), 1, float(row["mean_score"])])
+    while len(blocks) > 1 and blocks[-2][0] / blocks[-2][1] > blocks[-1][0] / blocks[-1][1]:
+      last = blocks.pop()
+      blocks[-1] = [blocks[-1][0] + last[0], blocks[-1][1] + last[1], blocks[-1][2] + last[2]]
+  return np.array([block[2] / block[1] for block in blocks]), np.array([block[0] / block[1] for block in blocks])
+
+
 def run_trials(rows, calibration, sizes, trials, rng) -> dict[tuple[int, int], dict[str, np.ndarray]]:
   bucket_means = np.array([float(row["mean_score"]) for row in calibration])
+  curve_scores, curve_elos = monotone_elo_curve(calibration)
   lows = [int(row["low"]) for row in calibration]
   results = {}
   for low in lows:
@@ -106,7 +118,8 @@ def run_trials(rows, calibration, sizes, trials, rng) -> dict[tuple[int, int], d
       results[(size, low)] = {
         "score": scores,
         "true_elo": entries["rating"][chosen].mean(axis=1),
-        "estimated_elo": np.array([estimate_elo(float(score), calibration)["estimated_elo"] for score in scores]),
+        "estimated_elo": np.interp(scores, curve_scores, curve_elos),
+        "clamped": (scores < curve_scores[0]) | (scores > curve_scores[-1]),
         "predicted_index": predicted,
         "true_index": np.full(trials, lows.index(low)),
       }
@@ -128,6 +141,7 @@ def summarize(results, calibration, sizes):
       "mean_absolute_error": float(np.abs(error).mean()),
       "rmse": float(np.sqrt((error ** 2).mean())),
       "slope_estimated_vs_true": float(np.polyfit(stacked["true_elo"], stacked["estimated_elo"], 1)[0]),
+      "fraction_clamped_to_range": float(stacked["clamped"].mean()),
     })
     for low in lows:
       bucket = results[(size, low)]
@@ -136,6 +150,7 @@ def summarize(results, calibration, sizes):
         "games_averaged": size, "bucket": f"{low}-{int(next(r['high'] for r in calibration if int(r['low']) == low))}",
         "mean_signed_error": float(bucket_error.mean()), "error_std": float(bucket_error.std()),
         "mean_absolute_error": float(np.abs(bucket_error).mean()),
+        "fraction_clamped": float(bucket["clamped"].mean()),
         "accuracy_exact": float((bucket["predicted_index"] == bucket["true_index"]).mean()),
       })
   return overall, by_bucket
@@ -219,7 +234,8 @@ def main() -> int:
     f"# Evaluation: {args.checkpoint}", "",
     f"Config `{args.config}`, candidates `{args.candidate_dir}`, queries `{args.query_dir}`, "
     f"{args.trials} random groups per bucket and size, seed {args.seed}.",
-    "Signed error = estimated Elo - mean recorded rating of the sampled players.", "",
+    "Signed error = estimated Elo - mean recorded rating of the sampled players.",
+    "Estimated Elo interpolates a monotone calibration (buckets with out-of-order scores are pooled) and is clamped to the calibrated range.", "",
     f"Calibration order violations: {violations or 'none'}", "",
     "## Overall", markdown_table(overall), "",
   ]
